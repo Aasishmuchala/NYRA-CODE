@@ -19,6 +19,14 @@ import {
   launchApp, listRunningApps, focusApp, getActiveWindow,
 } from './desktop-control'
 import { isOllamaRunning, getOllamaModels, getOllamaProviderDef, syncOllamaToOpenClaw, pullModel, deleteModel, getModelInfo } from './ollama'
+import {
+  discoverPlugins, loadPlugin, unloadPlugin, installPlugin, removePlugin,
+  enablePlugin, disablePlugin, getInstalledPlugins, getPluginTools
+} from './plugins'
+import {
+  browseSkills, installSkill, removeSkill, getInstalledSkills,
+  enableSkill, disableSkill
+} from './skills-marketplace'
 import { ptyManager } from './pty'
 import { gitManager } from './git'
 import { memoryManager } from './memory'
@@ -42,10 +50,11 @@ function assertSafePath(p: string): void {
 }
 
 // ── Paths ──────────────────────────────────────────────────────────────────────
-const TASKS_PATH    = path.join(app.getPath('userData'), 'nyra_scheduled_tasks.json')
-const PROJECTS_PATH = path.join(app.getPath('userData'), 'nyra_projects.json')
-const PROMPTS_PATH  = path.join(app.getPath('userData'), 'nyra_prompts.json')
-const THEME_PATH    = path.join(app.getPath('userData'), 'nyra_theme.json')
+const TASKS_PATH      = path.join(app.getPath('userData'), 'nyra_scheduled_tasks.json')
+const PROJECTS_PATH   = path.join(app.getPath('userData'), 'nyra_projects.json')
+const PROMPTS_PATH    = path.join(app.getPath('userData'), 'nyra_prompts.json')
+const THEME_PATH      = path.join(app.getPath('userData'), 'nyra_theme.json')
+const ONBOARDED_PATH  = path.join(app.getPath('userData'), 'nyra_onboarded.json')
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface ScheduledTask {
@@ -234,6 +243,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('app:open-external', (_e, url: string) => shell.openExternal(url))
   ipcMain.handle('app:platform',      () => process.platform)
 
+  // ── Onboarding ──────────────────────────────────────────────────────────────
+  ipcMain.handle('app:is-onboarded',   () => fs.existsSync(ONBOARDED_PATH))
+  ipcMain.handle('app:set-onboarded',  () => { writeJson(ONBOARDED_PATH, { onboarded: true, at: Date.now() }); return true })
+
   // ── Terminal (PTY) ──────────────────────────────────────────────────────────
   ipcMain.handle('pty:create',  (_e, cwd?: string) => ptyManager.create(cwd))
   ipcMain.handle('pty:write',   (_e, id: string, data: string) => { ptyManager.write(id, data); return true })
@@ -303,6 +316,25 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   codebaseIndexer.on('ready', (stats: unknown) => {
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('indexer:ready', stats)
   })
+
+  // ── Plugins ──────────────────────────────────────────────────────────────────
+  ipcMain.handle('plugins:list',      () => getInstalledPlugins())
+  ipcMain.handle('plugins:discover',  () => discoverPlugins())
+  ipcMain.handle('plugins:install',   (_e, source: string) => installPlugin(source))
+  ipcMain.handle('plugins:remove',    (_e, id: string) => { removePlugin(id); return true })
+  ipcMain.handle('plugins:enable',    (_e, id: string) => { enablePlugin(id); return true })
+  ipcMain.handle('plugins:disable',   (_e, id: string) => { disablePlugin(id); return true })
+  ipcMain.handle('plugins:load',      (_e, id: string) => loadPlugin(id))
+  ipcMain.handle('plugins:unload',    (_e, id: string) => { unloadPlugin(id); return true })
+  ipcMain.handle('plugins:tools',     (_e, id: string) => getPluginTools(id))
+
+  // ── Skills Marketplace ──────────────────────────────────────────────────────
+  ipcMain.handle('skills:browse',     (_e, query?: string, category?: string) => browseSkills(query, category))
+  ipcMain.handle('skills:install',    (_e, id: string) => { installSkill(id); return true })
+  ipcMain.handle('skills:remove',     (_e, id: string) => { removeSkill(id); return true })
+  ipcMain.handle('skills:installed',  () => getInstalledSkills())
+  ipcMain.handle('skills:enable',     (_e, id: string) => { enableSkill(id); return true })
+  ipcMain.handle('skills:disable',    (_e, id: string) => { disableSkill(id); return true })
 
   // ── Window ────────────────────────────────────────────────────────────────────
   ipcMain.on('window:minimize',  () => mainWindow?.minimize())

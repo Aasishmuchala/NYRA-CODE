@@ -152,6 +152,8 @@ const nyraApi = {
     version:      (): Promise<string>        => ipcRenderer.invoke('app:version'),
     openExternal: (url: string)              => ipcRenderer.invoke('app:open-external', url),
     platform:     (): Promise<string>        => ipcRenderer.invoke('app:platform'),
+    isOnboarded:  (): Promise<boolean>       => ipcRenderer.invoke('app:is-onboarded'),
+    setOnboarded: (): Promise<boolean>       => ipcRenderer.invoke('app:set-onboarded'),
   },
 
   zoom: {
@@ -263,6 +265,29 @@ const nyraApi = {
       ipcRenderer.on('indexer:ready', handler)
       return () => ipcRenderer.removeListener('indexer:ready', handler)
     },
+  },
+
+  // ── Plugins ──────────────────────────────────────────────────────────────────
+  plugins: {
+    list:     (): Promise<Array<{ manifest: { id: string; name: string; version: string; description: string; author: string; icon?: string; homepage?: string; tools?: unknown[]; permissions?: string[] }; enabled: boolean; loaded: boolean }>> => ipcRenderer.invoke('plugins:list'),
+    discover: (): Promise<unknown[]>                   => ipcRenderer.invoke('plugins:discover'),
+    install:  (source: string): Promise<boolean>       => ipcRenderer.invoke('plugins:install', source),
+    remove:   (id: string): Promise<boolean>           => ipcRenderer.invoke('plugins:remove', id),
+    enable:   (id: string): Promise<boolean>           => ipcRenderer.invoke('plugins:enable', id),
+    disable:  (id: string): Promise<boolean>           => ipcRenderer.invoke('plugins:disable', id),
+    load:     (id: string): Promise<boolean>           => ipcRenderer.invoke('plugins:load', id),
+    unload:   (id: string): Promise<boolean>           => ipcRenderer.invoke('plugins:unload', id),
+    tools:    (id: string): Promise<unknown[]>         => ipcRenderer.invoke('plugins:tools', id),
+  },
+
+  // ── Skills Marketplace ──────────────────────────────────────────────────────
+  skills: {
+    browse:    (query?: string, category?: string): Promise<Array<{ id: string; name: string; description: string; author: string; version: string; category: string; downloads: number; rating: number; tags: string[]; icon?: string; installedLocally?: boolean }>> => ipcRenderer.invoke('skills:browse', query, category),
+    install:   (id: string): Promise<boolean>            => ipcRenderer.invoke('skills:install', id),
+    remove:    (id: string): Promise<boolean>            => ipcRenderer.invoke('skills:remove', id),
+    installed: (): Promise<Array<{ id: string; name: string; description: string; author: string; version: string; category: string; downloads: number; rating: number; tags: string[]; icon?: string; enabled: boolean }>> => ipcRenderer.invoke('skills:installed'),
+    enable:    (id: string): Promise<boolean>            => ipcRenderer.invoke('skills:enable', id),
+    disable:   (id: string): Promise<boolean>            => ipcRenderer.invoke('skills:disable', id),
   },
 
   shortcuts: {

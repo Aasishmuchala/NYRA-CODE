@@ -2,14 +2,17 @@
  * Settings Panel — Providers · MCP servers · Appearance · About
  */
 import React, { useEffect, useState } from 'react'
-import { X, Plus, Trash2, RefreshCw, ExternalLink, Palette, Check, Key, Loader2, Shield, ChevronDown, HardDrive, Download, Server } from 'lucide-react'
+import { X, Plus, Trash2, RefreshCw, ExternalLink, Palette, Check, Key, Loader2, Shield, ChevronDown, HardDrive, Download, Server, Puzzle, Sparkles } from 'lucide-react'
+import { PluginManager } from './PluginManager'
+import { MCPBrowser } from './MCPBrowser'
+import { SkillsMarketplace } from './SkillsMarketplace'
 import type { McpServerConfig, ThemeConfig } from '../../preload/index'
 
 interface Props {
   onClose: () => void
 }
 
-type Tab = 'providers' | 'mcp' | 'ollama' | 'appearance' | 'about'
+type Tab = 'providers' | 'mcp' | 'ollama' | 'plugins' | 'skills' | 'appearance' | 'about'
 
 // ── Provider types (mirroring preload) ──────────────────────────────────────
 interface ProviderState {
@@ -121,17 +124,23 @@ export const SettingsPanel: React.FC<Props> = ({ onClose }) => {
 
       {/* Tabs */}
       <div className="flex gap-1 px-5 pt-3 flex-wrap">
-        {(['providers', 'mcp', 'ollama', 'appearance', 'about'] as Tab[]).map(t => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-colors capitalize ${
-              tab === t ? 'bg-white/10 text-white' : 'text-white/35 hover:text-white/70'
-            }`}
-          >
-            {t === 'providers' ? 'Providers' : t === 'mcp' ? 'MCP Servers' : t === 'ollama' ? 'Local LLMs' : t === 'appearance' ? 'Appearance' : 'About'}
-          </button>
-        ))}
+        {(['providers', 'mcp', 'ollama', 'plugins', 'skills', 'appearance', 'about'] as Tab[]).map(t => {
+          const labels: Record<Tab, string> = {
+            providers: 'Providers', mcp: 'MCP Servers', ollama: 'Local LLMs',
+            plugins: 'Plugins', skills: 'Skills', appearance: 'Appearance', about: 'About',
+          }
+          return (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-colors ${
+                tab === t ? 'bg-white/10 text-white' : 'text-white/35 hover:text-white/70'
+              }`}
+            >
+              {labels[t]}
+            </button>
+          )
+        })}
       </div>
 
       <div className="flex-1 overflow-y-auto p-5 scrollbar-thin">
@@ -587,6 +596,12 @@ export const SettingsPanel: React.FC<Props> = ({ onClose }) => {
             </div>
           </div>
         )}
+
+        {/* ── Plugins Tab ──────────────────────────────────────────────────── */}
+        {tab === 'plugins' && <PluginManager />}
+
+        {/* ── Skills Tab ────────────────────────────────────────────────────── */}
+        {tab === 'skills' && <SkillsMarketplace onClose={() => setTab('providers')} />}
 
         {/* ── About Tab ────────────────────────────────────────────────────── */}
         {tab === 'about' && (
