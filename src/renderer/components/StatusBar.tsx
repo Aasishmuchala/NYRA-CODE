@@ -1,8 +1,8 @@
 /**
  * Bottom status bar — shows OpenClaw connection status + install progress
  */
-import React, { useEffect, useState } from 'react'
-import { Wifi, WifiOff, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
+import React from 'react'
+import { WifiOff, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
 import type { GatewayStatus } from '../hooks/useOpenClaw'
 
 interface Props {

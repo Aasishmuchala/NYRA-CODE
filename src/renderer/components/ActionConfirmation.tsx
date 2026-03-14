@@ -164,6 +164,8 @@ const ACTION_LABELS: Record<DesktopAction['type'], string> = {
 // Action details renderer
 function renderActionDetails(action: DesktopAction): React.ReactNode {
   const { type, params } = action
+  // Cast unknown values to string for safe rendering
+  const str = (key: string): string => String(params[key] ?? '')
 
   switch (type) {
     case 'mouse-click':
@@ -171,14 +173,14 @@ function renderActionDetails(action: DesktopAction): React.ReactNode {
     case 'mouse-scroll':
       return (
         <div className="text-sm text-gray-300 space-y-1">
-          {params.x && params.y && (
+          {params.x != null && params.y != null && (
             <p>
-              Position: <span className="text-white font-mono">{params.x}, {params.y}</span>
+              Position: <span className="text-white font-mono">{str('x')}, {str('y')}</span>
             </p>
           )}
-          {params.button && (
+          {params.button != null && (
             <p>
-              Button: <span className="text-white font-mono">{params.button}</span>
+              Button: <span className="text-white font-mono">{str('button')}</span>
             </p>
           )}
         </div>
@@ -187,9 +189,9 @@ function renderActionDetails(action: DesktopAction): React.ReactNode {
     case 'mouse-move':
       return (
         <div className="text-sm text-gray-300">
-          {params.x && params.y && (
+          {params.x != null && params.y != null && (
             <p>
-              Position: <span className="text-white font-mono">{params.x}, {params.y}</span>
+              Position: <span className="text-white font-mono">{str('x')}, {str('y')}</span>
             </p>
           )}
         </div>
@@ -198,14 +200,14 @@ function renderActionDetails(action: DesktopAction): React.ReactNode {
     case 'mouse-drag':
       return (
         <div className="text-sm text-gray-300 space-y-1">
-          {params.fromX && params.fromY && (
+          {params.fromX != null && params.fromY != null && (
             <p>
-              From: <span className="text-white font-mono">{params.fromX}, {params.fromY}</span>
+              From: <span className="text-white font-mono">{str('fromX')}, {str('fromY')}</span>
             </p>
           )}
-          {params.toX && params.toY && (
+          {params.toX != null && params.toY != null && (
             <p>
-              To: <span className="text-white font-mono">{params.toX}, {params.toY}</span>
+              To: <span className="text-white font-mono">{str('toX')}, {str('toY')}</span>
             </p>
           )}
         </div>
@@ -214,14 +216,14 @@ function renderActionDetails(action: DesktopAction): React.ReactNode {
     case 'type-text':
       return (
         <div className="text-sm text-gray-300">
-          Text: <span className="text-white font-mono break-words">{params.text}</span>
+          Text: <span className="text-white font-mono break-words">{str('text')}</span>
         </div>
       )
 
     case 'press-key':
       return (
         <div className="text-sm text-gray-300">
-          Key: <span className="text-white font-mono">{params.key}</span>
+          Key: <span className="text-white font-mono">{str('key')}</span>
         </div>
       )
 
@@ -229,21 +231,21 @@ function renderActionDetails(action: DesktopAction): React.ReactNode {
       return (
         <div className="text-sm text-gray-300">
           Combination:{' '}
-          <span className="text-white font-mono">{(params.keys as string[])?.join(' + ')}</span>
+          <span className="text-white font-mono">{(params.keys as string[])?.join(' + ') ?? ''}</span>
         </div>
       )
 
     case 'launch-app':
       return (
         <div className="text-sm text-gray-300">
-          App: <span className="text-white font-mono">{params.appPath || params.appName}</span>
+          App: <span className="text-white font-mono">{str('appPath') || str('appName')}</span>
         </div>
       )
 
     case 'focus-app':
       return (
         <div className="text-sm text-gray-300">
-          App: <span className="text-white font-mono">{params.appName}</span>
+          App: <span className="text-white font-mono">{str('appName')}</span>
         </div>
       )
 
@@ -252,7 +254,7 @@ function renderActionDetails(action: DesktopAction): React.ReactNode {
         <div className="text-sm text-gray-300">
           {params.region ? (
             <p>
-              Region: <span className="text-white font-mono">{params.region}</span>
+              Region: <span className="text-white font-mono">{str('region')}</span>
             </p>
           ) : (
             <p>Full screen capture</p>

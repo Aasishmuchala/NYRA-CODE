@@ -3,7 +3,7 @@
  * Returns base64 PNG images suitable for AI vision models
  * Handles multi-monitor setups and window-specific captures
  */
-import { desktopCapturer, nativeImage, BrowserWindow } from 'electron'
+import { desktopCapturer, NativeImage } from 'electron'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 export interface ScreenCapture {
@@ -30,9 +30,12 @@ let continuousCaptureCallback: ((capture: ScreenCapture | null) => void) | null 
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
 /**
- * Resize image to max 1024px on longest side for AI context efficiency
+ * Resize image to max 1024px on longest side for AI context efficiency.
+ *
+ * NOTE: The parameter type is Electron.NativeImage (an instance), not
+ * `typeof nativeImage` (the module with static factory methods).
  */
-function resizeForAI(img: typeof nativeImage): typeof nativeImage {
+function resizeForAI(img: NativeImage): NativeImage {
   const size = img.getSize()
   const maxDim = 1024
   const longest = Math.max(size.width, size.height)
@@ -47,22 +50,26 @@ function resizeForAI(img: typeof nativeImage): typeof nativeImage {
 }
 
 /**
- * Convert nativeImage to base64 PNG string
+ * Convert NativeImage instance to base64 PNG string
  */
-function imageToBase64(img: typeof nativeImage): string {
+function imageToBase64(img: NativeImage): string {
   return img.toPNG().toString('base64')
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 
 /**
- * Capture a single screenshot of the primary screen
+ * Capture a single screenshot of the primary screen.
+ *
+ * In Electron 29, desktopCapturer.getSources with a large thumbnailSize
+ * returns a NativeImage thumbnail we can use directly — no need for
+ * getDisplayMedia() (which requires a visible <video> element in the renderer).
  */
 export async function captureScreen(): Promise<ScreenCapture | null> {
   try {
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
-      thumbnailSize: { width: 0, height: 0 }
+      thumbnailSize: { width: 1920, height: 1080 }
     })
 
     if (sources.length === 0) {
@@ -70,30 +77,7 @@ export async function captureScreen(): Promise<ScreenCapture | null> {
       return null
     }
 
-    // Capture the primary screen (first source)
-    const primaryScreen = sources[0]
-    const screenshot = await primaryScreen.getMediaSource().getDisplayMedia({
-      audio: false,
-      video: {
-        mandatory: {
-          chromeMediaSource: 'desktop',
-          chromeMediaSourceId: primaryScreen.id
-        }
-      }
-    } as any)
-
-    // For Electron 29, use desktopCapturer directly with proper thumbnail capture
-    const capturedSources = await desktopCapturer.getSources({
-      types: ['screen'],
-      thumbnailSize: { width: 1920, height: 1080 }
-    })
-
-    if (capturedSources.length === 0) {
-      console.warn('[screen] Failed to get capture sources')
-      return null
-    }
-
-    const thumbnail = capturedSources[0].thumbnail
+    const thumbnail = sources[0].thumbnail
     const resized = resizeForAI(thumbnail)
     const size = resized.getSize()
 

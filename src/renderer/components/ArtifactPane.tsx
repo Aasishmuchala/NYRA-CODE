@@ -4,7 +4,7 @@
  * syntax highlighting + live HTML/React preview capability.
  */
 import React, { useState, useMemo } from 'react'
-import { X, Copy, Check, Code2, Globe, ChevronRight, Download } from 'lucide-react'
+import { X, Copy, Check, Code2, Globe, Download } from 'lucide-react'
 
 export interface Artifact {
   id: string
@@ -128,7 +128,7 @@ export const ArtifactPane: React.FC<Props> = ({ artifacts, onClose }) => {
 }
 
 // ── Code view with basic token coloring ───────────────────────────────────────
-const CodeView: React.FC<{ code: string; lang: string }> = ({ code, lang }) => {
+const CodeView: React.FC<{ code: string; lang: string }> = ({ code, lang: _lang }) => {
   const lines = code.split('\n')
   return (
     <div className="h-full overflow-auto scrollbar-thin font-mono text-[12px] leading-relaxed p-4">

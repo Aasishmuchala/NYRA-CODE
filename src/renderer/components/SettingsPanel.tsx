@@ -2,7 +2,7 @@
  * Settings Panel — Providers · MCP servers · Appearance · About
  */
 import React, { useEffect, useState } from 'react'
-import { X, Plus, Trash2, RefreshCw, ExternalLink, Palette, Check, Key, Loader2, Shield, ChevronDown, HardDrive, Download, AlertCircle, Server } from 'lucide-react'
+import { X, Plus, Trash2, RefreshCw, ExternalLink, Palette, Check, Key, Loader2, Shield, ChevronDown, HardDrive, Download, Server } from 'lucide-react'
 import type { McpServerConfig, ThemeConfig } from '../../preload/index'
 
 interface Props {

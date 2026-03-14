@@ -205,7 +205,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('desktop:mouse-drag',          (_e, fx: number, fy: number, tx: number, ty: number)       => mouseDrag(fx, fy, tx, ty))
   ipcMain.handle('desktop:type-text',           (_e, text: string)                                          => typeText(text))
   ipcMain.handle('desktop:press-key',           (_e, key: string)                                           => pressKey(key))
-  ipcMain.handle('desktop:hotkey',              (_e, mods: string[], key: string)                           => hotkey(mods, key))
+  ipcMain.handle('desktop:hotkey',              (_e, mods: string[], key: string)                           => hotkey(mods as import('./desktop-control').ModifierKey[], key))
   ipcMain.handle('desktop:launch-app',          (_e, name: string)                                          => launchApp(name))
   ipcMain.handle('desktop:list-apps',           ()                                                          => listRunningApps())
   ipcMain.handle('desktop:focus-app',           (_e, name: string)                                          => focusApp(name))

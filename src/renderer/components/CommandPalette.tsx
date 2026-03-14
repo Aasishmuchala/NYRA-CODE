@@ -5,7 +5,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import {
   Search, Plus, Settings, Clock, BookOpen, Download,
-  Hash, ArrowRight, Cpu, Mic, FileText, Zap
+  Hash, ArrowRight, Mic, FileText
 } from 'lucide-react'
 import type { Session } from '../hooks/useOpenClaw'
 import type { SavedPrompt } from '../../preload/index'
@@ -67,7 +67,7 @@ export const CommandPalette: React.FC<Props> = ({
 
   const matchedSessions = q
     ? searchSessions(q).slice(0, 6)
-    : sessions.slice(0, 5).map(s => ({ session: s, score: 1 }))
+    : sessions.slice(0, 5).map(s => ({ session: s, score: 1, matchedMsg: undefined as { content: string } | undefined }))
 
   const matchedPrompts = q
     ? prompts.filter(p => p.title.toLowerCase().includes(q) || p.content.toLowerCase().includes(q)).slice(0, 4)

@@ -30,7 +30,7 @@ export const NotificationBanner: React.FC = () => {
       push({ type: 'info', title, body })
     })
     // Update available
-    window.nyra.updater.onAvailable((info: unknown) => {
+    window.nyra.updater.onAvailable((_info: unknown) => {
       push({
         type: 'update',
         title: 'Update available',

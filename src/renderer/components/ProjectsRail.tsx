@@ -36,7 +36,7 @@ const ACTIVE_RING: Record<string, string> = {
 export const ProjectsRail: React.FC<Props> = ({
   projects, activeProjectId, onSelectProject, onCreateProject
 }) => {
-  const [hovered, setHovered] = useState<string | null>(null)
+  const [, setHovered] = useState<string | null>(null)
 
   return (
     <div className="w-[52px] h-full bg-[#0a0a0a] border-r border-white/[0.06] flex flex-col items-center py-3 gap-1.5 flex-shrink-0">

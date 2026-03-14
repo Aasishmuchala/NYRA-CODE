@@ -91,7 +91,7 @@ const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
 // ── Active flow state ────────────────────────────────────────────────────────
 
 let activeServer: http.Server | null = null
-let activeResolve: ((result: OAuthResult) => void) | null = null
+let _activeResolve: ((result: OAuthResult) => void) | null = null
 
 export interface OAuthResult {
   success: boolean
@@ -124,7 +124,7 @@ export async function startOAuthFlow(
   const state = generateState()
 
   return new Promise<OAuthResult>((resolve) => {
-    activeResolve = resolve
+    _activeResolve = resolve
 
     // Start local callback server
     const server = http.createServer(async (req, res) => {
@@ -384,7 +384,10 @@ function cleanup() {
     activeServer.close()
     activeServer = null
   }
-  activeResolve = null
+  if (_activeResolve) {
+    _activeResolve({ success: false, providerId: '', error: 'OAuth flow cancelled' })
+    _activeResolve = null
+  }
 }
 
 function makeCallbackHtml(title: string, message: string): string {
