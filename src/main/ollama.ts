@@ -160,30 +160,36 @@ export async function pullModel(
     const decoder = new TextDecoder();
     let buffer = '';
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
-      for (const line of lines) {
-        if (line.trim()) {
-          try {
-            const chunk = JSON.parse(line);
-            if (onProgress) {
-              onProgress({
-                status: chunk.status || 'pulling',
-                completed: chunk.completed,
-                total: chunk.total,
-              });
+        for (const line of lines) {
+          if (line.trim()) {
+            try {
+              const chunk = JSON.parse(line);
+              if (onProgress) {
+                onProgress({
+                  status: chunk.status || 'pulling',
+                  completed: chunk.completed,
+                  total: chunk.total,
+                });
+              }
+            } catch {
+              // Skip malformed JSON lines
             }
-          } catch {
-            // Skip malformed JSON lines
           }
         }
       }
+    } catch (streamError) {
+      // Release the reader on mid-stream network failures
+      try { reader.cancel(); } catch { /* ignore cancel errors */ }
+      throw streamError;
     }
   } catch (error) {
     console.error('Failed to pull model:', error);

@@ -34,12 +34,16 @@ import { ExportModal }         from './components/ExportModal'
 import { VoiceInput }          from './components/VoiceInput'
 import TerminalPanel           from './components/Terminal'
 import { GitPanel }            from './components/GitPanel'
+import { ActionQueueProvider, ActionConfirmation, useActionQueue } from './components/ActionConfirmation'
+import { Onboarding }          from './components/Onboarding'
+import { ModelComparison }     from './components/ModelComparison'
+import { MCPBrowser }          from './components/MCPBrowser'
 import type { Project }        from '../preload/index'
 import type { ChatMessage }    from './hooks/useOpenClaw'
 
 // ── Panel state ────────────────────────────────────────────────────────────────
 type Panel = 'none' | 'settings' | 'scheduled'
-type Modal = 'none' | 'prompts' | 'export' | 'voice' | 'createProject' | 'commandPalette'
+type Modal = 'none' | 'prompts' | 'export' | 'voice' | 'createProject' | 'commandPalette' | 'modelCompare' | 'mcpBrowser'
 
 // ── Session color map ──────────────────────────────────────────────────────────
 const COLOR_DOT: Record<SessionColor, string> = {
@@ -71,6 +75,7 @@ export const App: React.FC = () => {
   const [artifactOpen, setArtifactOpen]   = useState(false)
   const [terminalOpen, setTerminalOpen]   = useState(false)
   const [gitPanelOpen, setGitPanelOpen]   = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null) // null = loading
 
   // ── Projects state ─────────────────────────────────────────────────────────
   const [projects, setProjects]           = useState<Project[]>([])
@@ -87,6 +92,22 @@ export const App: React.FC = () => {
   }, [])
 
   useEffect(() => { loadProjects() }, [loadProjects])
+
+  // ── Onboarding check ─────────────────────────────────────────────────────
+  useEffect(() => {
+    let mounted = true
+    window.nyra.app.isOnboarded().then(done => {
+      if (mounted) setShowOnboarding(!done)
+    }).catch(() => {
+      if (mounted) setShowOnboarding(false) // assume onboarded on error
+    })
+    return () => { mounted = false }
+  }, [])
+
+  const handleOnboardingComplete = useCallback(async () => {
+    await window.nyra.app.setOnboarded()
+    setShowOnboarding(false)
+  }, [])
 
   // ── Theme apply on mount ───────────────────────────────────────────────────
   useEffect(() => {
@@ -188,6 +209,28 @@ export const App: React.FC = () => {
     return []
   }, [oc.activeSession?.messages])
 
+  // ── Screen capture ─────────────────────────────────────────────────────────
+  const handleScreenCapture = useCallback(async () => {
+    try {
+      const capture = await window.nyra.screen.capture()
+      if (capture) {
+        const attachment = {
+          name: `screenshot-${new Date().toISOString().replace(/[:.]/g, '-')}.png`,
+          mimeType: 'image/png',
+          content: capture.base64,
+        }
+        let sessionId = oc.activeSession?.id
+        if (!sessionId) {
+          const s = await oc.createSession()
+          sessionId = s?.id
+        }
+        await oc.sendMessage('Here is a screenshot of my screen. What do you see?', [attachment])
+      }
+    } catch (err) {
+      console.error('Screen capture failed:', err)
+    }
+  }, [oc])
+
   // ── Handle send ────────────────────────────────────────────────────────────
   const handleSend = useCallback(async (text: string, attachments?: ChatMessage['attachments']) => {
     let sessionId = oc.activeSession?.id
@@ -226,13 +269,24 @@ export const App: React.FC = () => {
     return <BootSplash status={oc.status} log={oc.log} />
   }
 
+  // Wait for onboarding check before rendering anything
+  if (showOnboarding === null) {
+    return <div className="h-screen w-screen bg-[#0b0a08]" />
+  }
+
+  if (showOnboarding) {
+    return <Onboarding onComplete={handleOnboardingComplete} />
+  }
+
   const messages = oc.activeSession?.messages ?? []
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
+    <ActionQueueProvider>
     <div className="h-screen w-screen flex flex-col bg-[#0b0a08] text-white overflow-hidden select-none">
 
       <NotificationBanner />
+      <ActionConfirmationOverlay />
       <DragDropOverlay onFiles={handleDrop} />
       <TitleBar title={activeProject ? `${activeProject.emoji} ${activeProject.name}` : 'Nyra'} />
 
@@ -469,6 +523,7 @@ export const App: React.FC = () => {
               incognito={incognito}
               systemPrompt={activeProject?.systemPrompt || oc.activeSession?.systemPrompt}
               onStartVoice={() => setModal('voice')}
+              onScreenCapture={handleScreenCapture}
             />
           </div>
         </main>
@@ -542,7 +597,41 @@ export const App: React.FC = () => {
           onCreate={handleCreateProject}
         />
       )}
+
+      {/* ── Model comparison ────────────────────────────────────────────── */}
+      {modal === 'modelCompare' && (
+        <ModelComparison
+          onClose={() => setModal('none')}
+          onSelectResponse={(_modelId, content) => {
+            handleSend(content)
+            setModal('none')
+          }}
+        />
+      )}
+
+      {/* ── MCP Browser ─────────────────────────────────────────────────── */}
+      {modal === 'mcpBrowser' && (
+        <MCPBrowser onClose={() => setModal('none')} />
+      )}
     </div>
+    </ActionQueueProvider>
+  )
+}
+
+// ── Action confirmation overlay (rendered inside ActionQueueProvider) ────────
+const ActionConfirmationOverlay: React.FC = () => {
+  const { pendingAction, approve, deny, alwaysAllow } = useActionQueue()
+  if (!pendingAction) return null
+  return (
+    <ActionConfirmation
+      action={pendingAction}
+      onApprove={() => approve(pendingAction.id)}
+      onDeny={() => deny(pendingAction.id)}
+      onAlwaysAllow={() => {
+        alwaysAllow(pendingAction.type)
+        approve(pendingAction.id)
+      }}
+    />
   )
 }
 

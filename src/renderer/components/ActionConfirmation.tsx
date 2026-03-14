@@ -65,8 +65,21 @@ export function ActionQueueProvider({ children }: { children: React.ReactNode })
   >(new Map())
 
   const enqueue = useCallback((action: DesktopAction) => {
+    // If this action type is in the always-allow list, auto-approve immediately
     setQueue((prev) => [...prev, action])
   }, [])
+
+  // Sweep stale pendingCallbacks entries that no longer have a matching queue item
+  useEffect(() => {
+    const queueIds = new Set(queue.map(a => a.id))
+    for (const id of pendingCallbacks.current.keys()) {
+      if (!queueIds.has(id)) {
+        const cb = pendingCallbacks.current.get(id)
+        if (cb) cb.resolve('denied') // resolve as denied for cleanup
+        pendingCallbacks.current.delete(id)
+      }
+    }
+  }, [queue])
 
   const approve = useCallback((actionId: string) => {
     const callback = pendingCallbacks.current.get(actionId)

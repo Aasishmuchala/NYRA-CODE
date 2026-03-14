@@ -56,6 +56,18 @@ function exec(cmd: string): string {
   }
 }
 
+// Shell-safe string escaping for osascript (wrap in single quotes, escape internal quotes)
+function escapeShellArg(arg: string): string {
+  return `'${arg.replace(/'/g, "'\\''")}'`;
+}
+
+// Validate mouse coordinates are within reasonable bounds
+function assertValidCoords(x: number, y: number): void {
+  if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > 10000 || y > 10000) {
+    throw new Error(`Invalid mouse coordinates: (${x}, ${y})`);
+  }
+}
+
 function log(msg: string): void {
   console.log(`${LOG_PREFIX} ${msg}`);
 }
@@ -65,6 +77,7 @@ function log(msg: string): void {
 // ============================================================================
 
 function mouseMove(x: number, y: number, opts?: Options): string {
+  assertValidCoords(x, y);
   const msg = `Moving mouse to (${x}, ${y})`;
   if (opts?.dryRun) {
     log(`[DRY RUN] ${msg}`);
@@ -74,8 +87,8 @@ function mouseMove(x: number, y: number, opts?: Options): string {
   const plat = getPlatform();
   try {
     if (plat === 'macos') {
-      const script = `set volume output muted; tell application "System Events" to move mouse to (${x}, ${y})`;
-      exec(`osascript -e '${script}'`);
+      const script = `tell application "System Events" to move mouse to (${Math.round(x)}, ${Math.round(y)})`;
+      exec(`osascript -e ${escapeShellArg(script)}`);
     } else if (plat === 'windows') {
       const ps = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${x}, ${y})`;
       exec(`powershell -NoProfile -Command "${ps}"`);
@@ -96,6 +109,7 @@ function mouseClick(
   button: Button = 'left',
   opts?: Options
 ): string {
+  assertValidCoords(x, y);
   const msg = `Clicking ${button} mouse button at (${x}, ${y})`;
   if (opts?.dryRun) {
     log(`[DRY RUN] ${msg}`);
@@ -109,7 +123,7 @@ function mouseClick(
     if (plat === 'macos') {
       const btnNum = button === 'left' ? 0 : button === 'right' ? 1 : 2;
       const script = `tell application "System Events" to click mouse button ${btnNum + 1}`;
-      exec(`osascript -e '${script}'`);
+      exec(`osascript -e ${escapeShellArg(script)}`);
     } else if (plat === 'windows') {
       // Use mouse_event via P/Invoke for proper button support
       const btnDown = button === 'right' ? '0x0008' : button === 'middle' ? '0x0020' : '0x0002';
@@ -131,6 +145,7 @@ Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern void 
 }
 
 function mouseDoubleClick(x: number, y: number, opts?: Options): string {
+  assertValidCoords(x, y);
   const msg = `Double-clicking at (${x}, ${y})`;
   if (opts?.dryRun) {
     log(`[DRY RUN] ${msg}`);
@@ -143,7 +158,7 @@ function mouseDoubleClick(x: number, y: number, opts?: Options): string {
   try {
     if (plat === 'macos') {
       const script = `tell application "System Events" to double click at (${x}, ${y})`;
-      exec(`osascript -e '${script}'`);
+      exec(`osascript -e ${escapeShellArg(script)}`);
     } else if (plat === 'windows') {
       const ps = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{LBUTTON}{LBUTTON}')`;
       exec(`powershell -NoProfile -Command "${ps}"`);
@@ -165,6 +180,7 @@ function mouseScroll(
   amount: number = 5,
   opts?: Options
 ): string {
+  assertValidCoords(x, y);
   const msg = `Scrolling ${direction} by ${amount} at (${x}, ${y})`;
   if (opts?.dryRun) {
     log(`[DRY RUN] ${msg}`);
@@ -178,7 +194,7 @@ function mouseScroll(
     if (plat === 'macos') {
       const delta = direction === 'up' ? amount : -amount;
       const script = `tell application "System Events" to scroll down by ${delta}`;
-      exec(`osascript -e '${script}'`);
+      exec(`osascript -e ${escapeShellArg(script)}`);
     } else if (plat === 'windows') {
       const delta = direction === 'up' ? amount : -amount;
       const ps = `[System.Windows.Forms.SendKeys]::SendWait('{SCROLL_UP}' * ${Math.abs(delta)})`;
@@ -204,6 +220,8 @@ function mouseDrag(
   toY: number,
   opts?: Options
 ): string {
+  assertValidCoords(fromX, fromY);
+  assertValidCoords(toX, toY);
   const msg = `Dragging from (${fromX}, ${fromY}) to (${toX}, ${toY})`;
   if (opts?.dryRun) {
     log(`[DRY RUN] ${msg}`);
@@ -219,7 +237,7 @@ function mouseDrag(
         move mouse to (${toX}, ${toY})
         mouse up
       end tell`;
-      exec(`osascript -e '${script}'`);
+      exec(`osascript -e ${escapeShellArg(script)}`);
     } else if (plat === 'windows') {
       const ps = `
         Add-Type -AssemblyName System.Windows.Forms;
@@ -255,8 +273,9 @@ function typeText(text: string, opts?: Options): string {
 
   try {
     if (plat === 'macos') {
-      const escaped = text.replace(/"/g, '\\"');
-      exec(`osascript -e 'tell application "System Events" to keystroke "${escaped}"'`);
+      const escaped = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      exec(`osascript -e ${escapeShellArg(`tell application "System Events" to keystroke "${escaped}"`)}`);
+
     } else if (plat === 'windows') {
       const escaped = text.replace(/"/g, '""');
       const ps = `[System.Windows.Forms.SendKeys]::SendWait("${escaped}")`;
@@ -303,7 +322,8 @@ function pressKey(key: string, opts?: Options): string {
         arrowright: 'right arrow',
       };
       const osKey = keyMap[key.toLowerCase()] || key;
-      exec(`osascript -e 'tell application "System Events" to key code for "${osKey}"'`);
+      exec(`osascript -e ${escapeShellArg(`tell application "System Events" to key code for "${osKey}"`)}`);
+
     } else if (plat === 'windows') {
       const keyMap: { [k: string]: string } = {
         return: 'RETURN',
@@ -372,7 +392,7 @@ function hotkey(modifiers: ModifierKey[], key: string, opts?: Options): string {
         key code for "${key}"
         ${modifiers.map((m) => (m === 'command' || m === 'meta' ? 'command up' : m === 'alt' ? 'option up' : m === 'ctrl' ? 'control up' : 'shift up')).join('\n        ')}
       end tell`;
-      exec(`osascript -e '${script}'`);
+      exec(`osascript -e ${escapeShellArg(script)}`);
     } else if (plat === 'windows') {
       const modMap: { [k: string]: string } = {
         shift: '+',
@@ -472,7 +492,8 @@ function focusApp(appName: string, opts?: Options): string {
 
   try {
     if (plat === 'macos') {
-      exec(`osascript -e 'activate application "${appName}"'`);
+      exec(`osascript -e ${escapeShellArg(`activate application "${appName}"`)}`);
+
     } else if (plat === 'windows') {
       const ps = `(Get-Process -Name "${appName}" -ErrorAction SilentlyContinue | Select-Object -First 1).MainWindowHandle`;
       exec(`powershell -NoProfile -Command "${ps}"`);
@@ -502,7 +523,7 @@ function getActiveWindow(): WindowInfo | null {
           return {app:frontApp, title:winTitle, bounds:winBounds}
         end tell
       `;
-      const result = exec(`osascript -e '${script}'`);
+      const result = exec(`osascript -e ${escapeShellArg(script)}`);
       const match = result.match(/app:(.+?),\s*title:(.+?),\s*bounds:([\d, ]+)/);
       if (match) {
         const bounds = match[3].split(', ').map(Number);
