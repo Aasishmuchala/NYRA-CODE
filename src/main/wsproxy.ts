@@ -316,6 +316,8 @@ export function startWsProxy(): void {
     })
 
     clientWs.on('close', (code: number, reason: Buffer) => {
+      // Clear auth timeout to prevent leaked timer firing after disconnect
+      if (authTimeout) { clearTimeout(authTimeout); authTimeout = null }
       console.log(`[WsProxy] #${id} Client disconnected code=${code}`)
       if (upstream.readyState === WebSocket.OPEN || upstream.readyState === WebSocket.CONNECTING) {
         try { upstream.close(code, reason) } catch { upstream.terminate() }

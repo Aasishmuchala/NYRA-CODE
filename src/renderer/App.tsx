@@ -87,7 +87,8 @@ export const App: React.FC = () => {
   // ── Theme apply on mount ───────────────────────────────────────────────────
   useEffect(() => {
     window.nyra.theme.get().then(t => applyThemeClass(t.mode, t.fontSize)).catch(() => {})
-    window.nyra.theme.onChange(t => applyThemeClass(t.mode, t.fontSize))
+    const unsub = window.nyra.theme.onChange(t => applyThemeClass(t.mode, t.fontSize))
+    return () => { if (typeof unsub === 'function') unsub() }
   }, [])
 
   // ── Scroll to bottom ───────────────────────────────────────────────────────
@@ -97,18 +98,20 @@ export const App: React.FC = () => {
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
   useEffect(() => {
-    window.nyra.shortcuts.onNewChat(() => { oc.createSession(); setPanel('none'); setModal('none') })
-    window.nyra.shortcuts.onSettings(() => setPanel(p => p === 'settings' ? 'none' : 'settings'))
-    window.nyra.shortcuts.onCommandPalette(() => setModal(m => m === 'commandPalette' ? 'none' : 'commandPalette'))
+    const u1 = window.nyra.shortcuts.onNewChat(() => { oc.createSession(); setPanel('none'); setModal('none') })
+    const u2 = window.nyra.shortcuts.onSettings(() => setPanel(p => p === 'settings' ? 'none' : 'settings'))
+    const u3 = window.nyra.shortcuts.onCommandPalette(() => setModal(m => m === 'commandPalette' ? 'none' : 'commandPalette'))
+    return () => { [u1, u2, u3].forEach(u => typeof u === 'function' && u()) }
   }, [])
 
   // ── Zoom indicator ─────────────────────────────────────────────────────────
   useEffect(() => {
-    window.nyra.zoom.onChange((f: number) => {
+    const unsub = window.nyra.zoom.onChange((f: number) => {
       setZoomLabel(`${Math.round(f * 100)}%`)
       if (zoomTimerRef.current) clearTimeout(zoomTimerRef.current)
       zoomTimerRef.current = setTimeout(() => setZoomLabel(null), 1500)
     })
+    return () => { if (typeof unsub === 'function') unsub() }
   }, [])
 
   // ── Drag-drop ──────────────────────────────────────────────────────────────

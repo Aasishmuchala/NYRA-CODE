@@ -22,6 +22,21 @@ import { isOllamaRunning, getOllamaModels, getOllamaProviderDef, syncOllamaToOpe
 import * as fs from 'fs'
 import * as path from 'path'
 
+// ── Filesystem sandbox ─────────────────────────────────────────────────────────
+// Only allow file read/write operations within the user's home directory.
+// This prevents a compromised renderer from accessing system files.
+const HOME_DIR = require('os').homedir()
+
+function assertSafePath(p: string): void {
+  const resolved = path.resolve(p)
+  // Allow paths inside user home, app userData, and temp dir
+  const allowedRoots = [HOME_DIR, app.getPath('userData'), app.getPath('temp')]
+  const isSafe = allowedRoots.some(root => resolved.startsWith(root + path.sep) || resolved === root)
+  if (!isSafe) {
+    throw new Error(`Path access denied (outside allowed directories): ${resolved}`)
+  }
+}
+
 // ── Paths ──────────────────────────────────────────────────────────────────────
 const TASKS_PATH    = path.join(app.getPath('userData'), 'nyra_scheduled_tasks.json')
 const PROJECTS_PATH = path.join(app.getPath('userData'), 'nyra_projects.json')
@@ -119,10 +134,12 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
   ipcMain.handle('files:read', (_e, p: string) => {
     try {
+      assertSafePath(p)
       const s = fs.statSync(p)
       if (s.size > 50 * 1024 * 1024) return { error: 'File too large' }
       return { name: path.basename(p), size: s.size, content: fs.readFileSync(p).toString('base64'), mimeType: guessMime(p) }
-    } catch {
+    } catch (err: any) {
+      if (err.message?.includes('Path access denied')) return { error: err.message }
       return null
     }
   })
@@ -130,8 +147,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const r = await dialog.showSaveDialog(mainWindow, { defaultPath: name })
     return r.canceled ? null : r.filePath
   })
-  ipcMain.handle('files:write',      (_e, p: string, c: string)       => { fs.writeFileSync(p, Buffer.from(c, 'base64')); return true })
-  ipcMain.handle('files:write-text', (_e, p: string, content: string) => { fs.writeFileSync(p, content, 'utf8'); return true })
+  ipcMain.handle('files:write',      (_e, p: string, c: string)       => { assertSafePath(p); fs.writeFileSync(p, Buffer.from(c, 'base64')); return true })
+  ipcMain.handle('files:write-text', (_e, p: string, content: string) => { assertSafePath(p); fs.writeFileSync(p, content, 'utf8'); return true })
 
   // ── Notifications ─────────────────────────────────────────────────────────────
   ipcMain.handle('notify:send', (_e, title: string, body: string) => sendNotification(title, body, mainWindow))

@@ -23,6 +23,23 @@ interface WindowInfo {
 const LOG_PREFIX = '[DesktopControl]';
 const EXEC_TIMEOUT = 5000;
 
+// ── Input sanitisation ─────────────────────────────────────────────────────
+// Only allow safe characters in app names / key names to prevent shell injection.
+const SAFE_APP_NAME = /^[a-zA-Z0-9 _\-./()]+$/;
+
+function assertSafeAppName(name: string): void {
+  if (!name || name.length > 256 || !SAFE_APP_NAME.test(name)) {
+    throw new Error(`Unsafe app name rejected: "${name.slice(0, 40)}"`)
+  }
+}
+
+function assertSafeKeyName(key: string): void {
+  // Key names should be short identifiers (e.g. "Return", "arrowup", "a")
+  if (!key || key.length > 64 || !/^[a-zA-Z0-9_ +\-]+$/.test(key)) {
+    throw new Error(`Unsafe key name rejected: "${key.slice(0, 40)}"`)
+  }
+}
+
 function getPlatform(): Platform {
   const plat = process.platform;
   if (plat === 'darwin') return 'macos';
@@ -94,13 +111,12 @@ function mouseClick(
       const script = `tell application "System Events" to click mouse button ${btnNum + 1}`;
       exec(`osascript -e '${script}'`);
     } else if (plat === 'windows') {
-      const btn =
-        button === 'left'
-          ? 'Left'
-          : button === 'right'
-            ? 'Right'
-            : 'Middle';
-      const ps = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{LBUTTON}')`;
+      // Use mouse_event via P/Invoke for proper button support
+      const btnDown = button === 'right' ? '0x0008' : button === 'middle' ? '0x0020' : '0x0002';
+      const btnUp   = button === 'right' ? '0x0010' : button === 'middle' ? '0x0040' : '0x0004';
+      const ps = `
+Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern void mouse_event(int f,int x,int y,int d,int e);' -Name U -Namespace W;
+[W.U]::mouse_event(${btnDown},0,0,0,0);[W.U]::mouse_event(${btnUp},0,0,0,0)`;
       exec(`powershell -NoProfile -Command "${ps}"`);
     } else {
       const btnName = button === 'left' ? 1 : button === 'right' ? 3 : 2;
@@ -258,6 +274,7 @@ function typeText(text: string, opts?: Options): string {
 }
 
 function pressKey(key: string, opts?: Options): string {
+  assertSafeKeyName(key);
   const msg = `Pressing key: ${key}`;
   if (opts?.dryRun) {
     log(`[DRY RUN] ${msg}`);
@@ -330,6 +347,8 @@ function pressKey(key: string, opts?: Options): string {
 }
 
 function hotkey(modifiers: ModifierKey[], key: string, opts?: Options): string {
+  assertSafeKeyName(key);
+  for (const m of modifiers) assertSafeKeyName(m);
   const msg = `Hotkey: ${modifiers.join('+').toUpperCase()} + ${key}`;
   if (opts?.dryRun) {
     log(`[DRY RUN] ${msg}`);
@@ -382,6 +401,7 @@ function hotkey(modifiers: ModifierKey[], key: string, opts?: Options): string {
 // ============================================================================
 
 function launchApp(appName: string, opts?: Options): string {
+  assertSafeAppName(appName);
   const msg = `Launching app: ${appName}`;
   if (opts?.dryRun) {
     log(`[DRY RUN] ${msg}`);
@@ -441,6 +461,7 @@ function listRunningApps(): AppInfo[] {
 }
 
 function focusApp(appName: string, opts?: Options): string {
+  assertSafeAppName(appName);
   const msg = `Focusing app: ${appName}`;
   if (opts?.dryRun) {
     log(`[DRY RUN] ${msg}`);

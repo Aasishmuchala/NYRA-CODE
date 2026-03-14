@@ -137,13 +137,14 @@ function writeConfig(cfg: ProvidersConfig): void {
 export function saveApiKey(providerId: string, key: string): boolean {
   try {
     const keyPath = getKeyPath(providerId)
-    if (safeStorage.isEncryptionAvailable()) {
-      const encrypted = safeStorage.encryptString(key)
-      fs.writeFileSync(keyPath, encrypted)
-    } else {
-      // Fallback: store as plain text (not ideal but functional)
-      fs.writeFileSync(keyPath, key, 'utf8')
+    if (!safeStorage.isEncryptionAvailable()) {
+      // Encryption unavailable (e.g. headless Linux without keyring).
+      // Refuse to store plaintext — prompt user to set up a keyring.
+      console.error(`[Providers] Cannot save key for ${providerId}: system keychain/encryption unavailable`)
+      return false
     }
+    const encrypted = safeStorage.encryptString(key)
+    fs.writeFileSync(keyPath, encrypted, { mode: 0o600 })
     // Enable provider in config
     const cfg = readConfig()
     if (!cfg.providers[providerId]) {
@@ -173,10 +174,11 @@ export function loadApiKey(providerId: string): string | null {
     const keyPath = getKeyPath(providerId)
     if (!fs.existsSync(keyPath)) return null
     const raw = fs.readFileSync(keyPath)
-    if (safeStorage.isEncryptionAvailable()) {
-      return safeStorage.decryptString(raw)
+    if (!safeStorage.isEncryptionAvailable()) {
+      console.warn(`[Providers] Cannot decrypt key for ${providerId}: encryption unavailable`)
+      return null
     }
-    return raw.toString('utf8')
+    return safeStorage.decryptString(raw)
   } catch {
     return null
   }

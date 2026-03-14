@@ -333,7 +333,13 @@ class OpenClawManager extends EventEmitter {
     const delay = Math.min(1000 * 2 ** this.restartAttempts, 30_000)
     console.log(`[OpenClaw] Restarting in ${delay}ms (attempt ${this.restartAttempts})`)
     this.emit('restarting', { attempt: this.restartAttempts, delay })
-    setTimeout(() => this.spawnGateway(), delay)
+    setTimeout(() => {
+      this.spawnGateway().catch((err) => {
+        console.error('[OpenClaw] Restart failed:', err)
+        this.setStatus('error')
+        this.emit('error', err instanceof Error ? err : new Error(String(err)))
+      })
+    }, delay)
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────

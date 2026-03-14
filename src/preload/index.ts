@@ -105,7 +105,11 @@ const nyraApi = {
   theme: {
     get:      (): Promise<ThemeConfig>               => ipcRenderer.invoke('theme:get'),
     set:      (t: ThemeConfig): Promise<boolean>     => ipcRenderer.invoke('theme:set', t),
-    onChange: (cb: (t: ThemeConfig) => void)         => ipcRenderer.on('theme:changed', (_, t) => cb(t)),
+    onChange: (cb: (t: ThemeConfig) => void) => {
+      const handler = (_: unknown, t: ThemeConfig) => cb(t)
+      ipcRenderer.on('theme:changed', handler)
+      return () => ipcRenderer.removeListener('theme:changed', handler)
+    },
   },
 
   // ── Screen Capture ──────────────────────────────────────────────────────────
@@ -155,7 +159,11 @@ const nyraApi = {
     out:      ()                                    => ipcRenderer.send('zoom:out'),
     reset:    ()                                    => ipcRenderer.send('zoom:reset'),
     get:      (): Promise<number>                   => ipcRenderer.invoke('zoom:get'),
-    onChange: (cb: (f: number) => void)             => ipcRenderer.on('zoom:changed', (_, f) => cb(f)),
+    onChange: (cb: (f: number) => void) => {
+      const handler = (_: unknown, f: number) => cb(f)
+      ipcRenderer.on('zoom:changed', handler)
+      return () => ipcRenderer.removeListener('zoom:changed', handler)
+    },
   },
 
   updater: {
@@ -174,10 +182,26 @@ const nyraApi = {
   },
 
   shortcuts: {
-    onNewChat:       (cb: () => void)              => ipcRenderer.on('shortcut:new-chat',        () => cb()),
-    onSettings:      (cb: () => void)              => ipcRenderer.on('shortcut:settings',         () => cb()),
-    onCommandPalette:(cb: () => void)              => ipcRenderer.on('shortcut:command-palette',  () => cb()),
-    onDeepLink:      (cb: (url: string) => void)   => ipcRenderer.on('deeplink',                  (_, url) => cb(url)),
+    onNewChat: (cb: () => void) => {
+      const handler = () => cb()
+      ipcRenderer.on('shortcut:new-chat', handler)
+      return () => ipcRenderer.removeListener('shortcut:new-chat', handler)
+    },
+    onSettings: (cb: () => void) => {
+      const handler = () => cb()
+      ipcRenderer.on('shortcut:settings', handler)
+      return () => ipcRenderer.removeListener('shortcut:settings', handler)
+    },
+    onCommandPalette: (cb: () => void) => {
+      const handler = () => cb()
+      ipcRenderer.on('shortcut:command-palette', handler)
+      return () => ipcRenderer.removeListener('shortcut:command-palette', handler)
+    },
+    onDeepLink: (cb: (url: string) => void) => {
+      const handler = (_: unknown, url: string) => cb(url)
+      ipcRenderer.on('deeplink', handler)
+      return () => ipcRenderer.removeListener('deeplink', handler)
+    },
   },
 }
 

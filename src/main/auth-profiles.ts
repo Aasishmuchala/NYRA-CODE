@@ -86,9 +86,10 @@ export function readAuthProfiles(): Record<string, AuthProfile> {
 }
 
 function writeAuthProfiles(profiles: Record<string, AuthProfile>): void {
-  // Ensure the directory tree exists
-  fs.mkdirSync(AGENT_DIR, { recursive: true })
-  fs.writeFileSync(AUTH_PROFILES, JSON.stringify(profiles, null, 2), 'utf8')
+  // Ensure the directory tree exists with restrictive permissions
+  fs.mkdirSync(AGENT_DIR, { recursive: true, mode: 0o700 })
+  // Write with owner-only permissions (0600) — this file contains API keys
+  fs.writeFileSync(AUTH_PROFILES, JSON.stringify(profiles, null, 2), { encoding: 'utf8', mode: 0o600 })
   console.log('[AuthProfiles] Written to', AUTH_PROFILES, '—', Object.keys(profiles).length, 'profile(s)')
 }
 
