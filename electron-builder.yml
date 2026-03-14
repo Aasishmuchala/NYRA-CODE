@@ -1,0 +1,83 @@
+# electron-builder configuration for Nyra Desktop
+# Targets: macOS (dmg + zip) and Windows (nsis installer + portable)
+
+appId: ai.nyra.desktop
+productName: Nyra
+copyright: Copyright © 2026 Nyra
+
+# Output directory
+directories:
+  output: dist
+  buildResources: resources
+
+# Files to include in the app package
+files:
+  - out/**/*
+  - resources/**/*
+  - "!**/*.map"
+  - "!**/node_modules/**"
+
+# Extra native resources (bundled openclaw binary if shipped)
+extraResources:
+  - from: resources/bin
+    to: bin
+    filter:
+      - "**/*"
+
+# ── macOS ──────────────────────────────────────────────────────────────────────
+mac:
+  category: public.app-category.productivity
+  icon: resources/icon.icns
+  target:
+    - target: dmg
+      arch: [x64, arm64]        # Intel + Apple Silicon
+    - target: zip
+      arch: [x64, arm64]
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  # Code signing (set CSC_LINK and CSC_KEY_PASSWORD env vars in CI)
+  # identity: null                # uncomment for local unsigned builds
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+  title: "Nyra ${version}"
+  window:
+    width: 540
+    height: 380
+
+# ── Windows ────────────────────────────────────────────────────────────────────
+win:
+  icon: resources/icon.ico
+  target:
+    - target: nsis             # installer
+      arch: [x64]
+    - target: portable         # standalone .exe
+      arch: [x64]
+  # sign with signtool if SIGNTOOL_PATH and WIN_CSC env vars are set
+  signingHashAlgorithms: [sha256]
+  publisherName: Nyra
+
+nsis:
+  oneClick: false
+  allowDirChange: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Nyra
+  installerHeaderIcon: resources/icon.ico
+  differentialPackage: true
+  deleteAppDataOnUninstall: false
+
+# ── Auto-update (GitHub Releases) ─────────────────────────────────────────────
+publish:
+  provider: github
+  owner: nyra-ai
+  repo: nyra-desktop
+  releaseType: release
