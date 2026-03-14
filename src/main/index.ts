@@ -21,6 +21,9 @@ import { createTray, destroyTray } from './tray'
 import { initAutoUpdater } from './updater'
 import { startWsProxy, stopWsProxy } from './wsproxy'
 import { syncProvidersToOpenClaw } from './providers'
+import { memoryManager } from './memory'
+import { ptyManager } from './pty'
+import { codebaseIndexer } from './indexer'
 
 // ── Dark mode ─────────────────────────────────────────────────────────────────
 nativeTheme.themeSource = 'dark'
@@ -213,6 +216,9 @@ app.whenReady().then(async () => {
   // upgrade requests in Electron 29. Origin rewriting for WS is handled by
   // the local WsProxy (wsproxy.ts) started above instead.
 
+  // Initialize persistent memory database
+  memoryManager.init()
+
   // Sync stored API keys → OpenClaw auth-profiles before gateway starts
   syncProvidersToOpenClaw()
 
@@ -242,9 +248,12 @@ app.on('activate', () => {
   }
 })
 
-app.on('before-quit', () => {
+app.on('before-quit', async () => {
   ;(app as typeof app & { isQuitting: boolean }).isQuitting = true
   globalShortcut.unregisterAll()
+  ptyManager.killAll()
+  await codebaseIndexer.close().catch(() => {})
+  memoryManager.close()
   openClawManager.shutdown()
   stopWsProxy()
   destroyTray()

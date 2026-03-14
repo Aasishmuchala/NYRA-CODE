@@ -181,6 +181,90 @@ const nyraApi = {
     isMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:is-maximized'),
   },
 
+  // ── Terminal (PTY) ──────────────────────────────────────────────────────────
+  pty: {
+    create:   (cwd?: string): Promise<string>         => ipcRenderer.invoke('pty:create', cwd),
+    write:    (id: string, data: string): Promise<boolean> => ipcRenderer.invoke('pty:write', id, data),
+    resize:   (id: string, cols: number, rows: number): Promise<boolean> => ipcRenderer.invoke('pty:resize', id, cols, rows),
+    kill:     (id: string): Promise<boolean>           => ipcRenderer.invoke('pty:kill', id),
+    list:     (): Promise<Array<{ id: string; cwd: string; pid: number }>> => ipcRenderer.invoke('pty:list'),
+    history:  (id: string): Promise<string>            => ipcRenderer.invoke('pty:history', id),
+    onData:   (cb: (id: string, data: string) => void) => {
+      const handler = (_: unknown, id: string, data: string) => cb(id, data)
+      ipcRenderer.on('pty:data', handler)
+      return () => ipcRenderer.removeListener('pty:data', handler)
+    },
+    onExit:   (cb: (id: string, exitCode?: number, signal?: number) => void) => {
+      const handler = (_: unknown, id: string, exitCode?: number, signal?: number) => cb(id, exitCode, signal)
+      ipcRenderer.on('pty:exit', handler)
+      return () => ipcRenderer.removeListener('pty:exit', handler)
+    },
+  },
+
+  // ── Git ────────────────────────────────────────────────────────────────────────
+  git: {
+    open:         (repoPath: string): Promise<{ branch: string; isClean: boolean }> => ipcRenderer.invoke('git:open', repoPath),
+    status:       (): Promise<unknown>              => ipcRenderer.invoke('git:status'),
+    diff:         (staged?: boolean): Promise<string> => ipcRenderer.invoke('git:diff', staged),
+    log:          (maxCount?: number): Promise<unknown> => ipcRenderer.invoke('git:log', maxCount),
+    branches:     (): Promise<{ current: string; all: string[] }> => ipcRenderer.invoke('git:branches'),
+    checkout:     (branch: string): Promise<void>   => ipcRenderer.invoke('git:checkout', branch),
+    createBranch: (name: string, from?: string): Promise<void> => ipcRenderer.invoke('git:create-branch', name, from),
+    stage:        (files: string[]): Promise<void>  => ipcRenderer.invoke('git:stage', files),
+    stageAll:     (): Promise<void>                 => ipcRenderer.invoke('git:stage-all'),
+    commit:       (message: string): Promise<string> => ipcRenderer.invoke('git:commit', message),
+    push:         (remote?: string, branch?: string): Promise<void> => ipcRenderer.invoke('git:push', remote, branch),
+    pull:         (remote?: string, branch?: string): Promise<void> => ipcRenderer.invoke('git:pull', remote, branch),
+    stash:        (message?: string): Promise<void> => ipcRenderer.invoke('git:stash', message),
+    stashPop:     (): Promise<void>                 => ipcRenderer.invoke('git:stash-pop'),
+    blame:        (file: string): Promise<string>   => ipcRenderer.invoke('git:blame', file),
+    showCommit:   (hash: string): Promise<string>   => ipcRenderer.invoke('git:show-commit', hash),
+    fileHistory:  (file: string, maxCount?: number): Promise<unknown> => ipcRenderer.invoke('git:file-history', file, maxCount),
+    diffBranch:   (base: string, head?: string): Promise<string> => ipcRenderer.invoke('git:diff-branch', base, head),
+    mergeBase:    (b1: string, b2: string): Promise<string> => ipcRenderer.invoke('git:merge-base', b1, b2),
+    isOpen:       (): Promise<boolean>              => ipcRenderer.invoke('git:is-open'),
+    repoPath:     (): Promise<string | null>        => ipcRenderer.invoke('git:repo-path'),
+  },
+
+  // ── Memory ─────────────────────────────────────────────────────────────────────
+  memory: {
+    setFact:          (cat: string, key: string, val: string, opts?: { confidence?: number; source?: string }): Promise<boolean> => ipcRenderer.invoke('memory:set-fact', cat, key, val, opts),
+    getFact:          (cat: string, key: string): Promise<{ value: string; confidence: number; source: string; updatedAt: number } | null> => ipcRenderer.invoke('memory:get-fact', cat, key),
+    searchFacts:      (q: string, cat?: string): Promise<Array<{ category: string; key: string; value: string; confidence: number }>> => ipcRenderer.invoke('memory:search-facts', q, cat),
+    listFacts:        (cat?: string): Promise<Array<{ category: string; key: string; value: string; confidence: number }>> => ipcRenderer.invoke('memory:list-facts', cat),
+    deleteFact:       (cat: string, key: string): Promise<boolean> => ipcRenderer.invoke('memory:delete-fact', cat, key),
+    addSummary:       (sessionId: string, summary: string, topics?: string[]): Promise<boolean> => ipcRenderer.invoke('memory:add-summary', sessionId, summary, topics),
+    getSummaries:     (sessionId?: string, limit?: number): Promise<Array<{ sessionId: string; summary: string; keyTopics: string[]; createdAt: number }>> => ipcRenderer.invoke('memory:get-summaries', sessionId, limit),
+    searchSummaries:  (q: string, limit?: number): Promise<Array<{ sessionId: string; summary: string; keyTopics: string[]; createdAt: number }>> => ipcRenderer.invoke('memory:search-summaries', q, limit),
+    setProjectCtx:    (pid: string, key: string, val: string): Promise<boolean> => ipcRenderer.invoke('memory:set-project-ctx', pid, key, val),
+    getProjectCtx:    (pid: string, key?: string): Promise<Array<{ key: string; value: string }>> => ipcRenderer.invoke('memory:get-project-ctx', pid, key),
+    deleteProjectCtx: (pid: string, key?: string): Promise<boolean> => ipcRenderer.invoke('memory:delete-project-ctx', pid, key),
+    buildContext:     (opts?: { projectId?: string; maxFacts?: number; maxSummaries?: number }): Promise<string> => ipcRenderer.invoke('memory:build-context', opts),
+    stats:            (): Promise<{ facts: number; summaries: number; projectContexts: number; dbSizeBytes: number }> => ipcRenderer.invoke('memory:stats'),
+  },
+
+  // ── Codebase Indexer ───────────────────────────────────────────────────────────
+  indexer: {
+    open:          (root: string): Promise<{ fileCount: number; totalLines: number }> => ipcRenderer.invoke('indexer:open', root),
+    close:         (): Promise<void>                => ipcRenderer.invoke('indexer:close'),
+    isOpen:        (): Promise<boolean>             => ipcRenderer.invoke('indexer:is-open'),
+    search:        (q: string, opts?: { ext?: string; limit?: number }): Promise<Array<{ path: string; ext: string; size: number; lines: number; symbols: string[]; snippet: string }>> => ipcRenderer.invoke('indexer:search', q, opts),
+    searchSymbols: (name: string): Promise<Array<{ path: string; symbol: string }>> => ipcRenderer.invoke('indexer:search-symbols', name),
+    getFile:       (relPath: string): Promise<{ path: string; ext: string; size: number; lines: number; symbols: string[]; snippet: string } | null> => ipcRenderer.invoke('indexer:get-file', relPath),
+    list:          (opts?: { ext?: string; dir?: string }): Promise<Array<{ path: string; ext: string; size: number; lines: number }>> => ipcRenderer.invoke('indexer:list', opts),
+    stats:         (): Promise<{ fileCount: number; totalLines: number; totalSize: number; byExtension: Record<string, number> }> => ipcRenderer.invoke('indexer:stats'),
+    onIndexed:     (cb: (filePath: string) => void) => {
+      const handler = (_: unknown, p: string) => cb(p)
+      ipcRenderer.on('indexer:indexed', handler)
+      return () => ipcRenderer.removeListener('indexer:indexed', handler)
+    },
+    onReady:       (cb: (stats: { fileCount: number; totalLines: number }) => void) => {
+      const handler = (_: unknown, s: { fileCount: number; totalLines: number }) => cb(s)
+      ipcRenderer.on('indexer:ready', handler)
+      return () => ipcRenderer.removeListener('indexer:ready', handler)
+    },
+  },
+
   shortcuts: {
     onNewChat: (cb: () => void) => {
       const handler = () => cb()

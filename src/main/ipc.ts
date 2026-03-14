@@ -19,6 +19,10 @@ import {
   launchApp, listRunningApps, focusApp, getActiveWindow,
 } from './desktop-control'
 import { isOllamaRunning, getOllamaModels, getOllamaProviderDef, syncOllamaToOpenClaw, pullModel, deleteModel, getModelInfo } from './ollama'
+import { ptyManager } from './pty'
+import { gitManager } from './git'
+import { memoryManager } from './memory'
+import { codebaseIndexer } from './indexer'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -229,6 +233,76 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('app:version',       () => app.getVersion())
   ipcMain.handle('app:open-external', (_e, url: string) => shell.openExternal(url))
   ipcMain.handle('app:platform',      () => process.platform)
+
+  // ── Terminal (PTY) ──────────────────────────────────────────────────────────
+  ipcMain.handle('pty:create',  (_e, cwd?: string) => ptyManager.create(cwd))
+  ipcMain.handle('pty:write',   (_e, id: string, data: string) => { ptyManager.write(id, data); return true })
+  ipcMain.handle('pty:resize',  (_e, id: string, cols: number, rows: number) => { ptyManager.resize(id, cols, rows); return true })
+  ipcMain.handle('pty:kill',    (_e, id: string) => { ptyManager.kill(id); return true })
+  ipcMain.handle('pty:list',    () => ptyManager.list())
+  ipcMain.handle('pty:history', (_e, id: string) => ptyManager.getHistory(id))
+  // Relay PTY events to renderer
+  ptyManager.on('data', (id: string, data: string) => {
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('pty:data', id, data)
+  })
+  ptyManager.on('exit', (id: string, exitCode: number | undefined, signal: number | undefined) => {
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('pty:exit', id, exitCode, signal)
+  })
+
+  // ── Git ────────────────────────────────────────────────────────────────────────
+  ipcMain.handle('git:open',          (_e, repoPath: string) => gitManager.open(repoPath))
+  ipcMain.handle('git:status',        () => gitManager.status())
+  ipcMain.handle('git:diff',          (_e, staged?: boolean) => gitManager.diff(staged))
+  ipcMain.handle('git:log',           (_e, maxCount?: number) => gitManager.log(maxCount))
+  ipcMain.handle('git:branches',      () => gitManager.branches())
+  ipcMain.handle('git:checkout',      (_e, branch: string) => gitManager.checkout(branch))
+  ipcMain.handle('git:create-branch', (_e, name: string, from?: string) => gitManager.createBranch(name, from))
+  ipcMain.handle('git:stage',         (_e, files: string[]) => gitManager.stage(files))
+  ipcMain.handle('git:stage-all',     () => gitManager.stageAll())
+  ipcMain.handle('git:commit',        (_e, message: string) => gitManager.commit(message))
+  ipcMain.handle('git:push',          (_e, remote?: string, branch?: string) => gitManager.push(remote, branch))
+  ipcMain.handle('git:pull',          (_e, remote?: string, branch?: string) => gitManager.pull(remote, branch))
+  ipcMain.handle('git:stash',         (_e, message?: string) => gitManager.stash(message))
+  ipcMain.handle('git:stash-pop',     () => gitManager.stashPop())
+  ipcMain.handle('git:blame',         (_e, file: string) => gitManager.blame(file))
+  ipcMain.handle('git:show-commit',   (_e, hash: string) => gitManager.showCommit(hash))
+  ipcMain.handle('git:file-history',  (_e, file: string, maxCount?: number) => gitManager.fileHistory(file, maxCount))
+  ipcMain.handle('git:diff-branch',   (_e, base: string, head?: string) => gitManager.diffBranch(base, head))
+  ipcMain.handle('git:merge-base',    (_e, b1: string, b2: string) => gitManager.mergeBase(b1, b2))
+  ipcMain.handle('git:is-open',       () => gitManager.isOpen())
+  ipcMain.handle('git:repo-path',     () => gitManager.getRepoPath())
+
+  // ── Memory ─────────────────────────────────────────────────────────────────────
+  ipcMain.handle('memory:set-fact',          (_e, cat: string, key: string, val: string, opts?: { confidence?: number; source?: string }) => { memoryManager.setFact(cat, key, val, opts); return true })
+  ipcMain.handle('memory:get-fact',          (_e, cat: string, key: string) => memoryManager.getFact(cat, key))
+  ipcMain.handle('memory:search-facts',      (_e, q: string, cat?: string) => memoryManager.searchFacts(q, cat))
+  ipcMain.handle('memory:list-facts',        (_e, cat?: string) => memoryManager.listFacts(cat))
+  ipcMain.handle('memory:delete-fact',       (_e, cat: string, key: string) => memoryManager.deleteFact(cat, key))
+  ipcMain.handle('memory:add-summary',       (_e, sessionId: string, summary: string, topics?: string[]) => { memoryManager.addSummary(sessionId, summary, topics); return true })
+  ipcMain.handle('memory:get-summaries',     (_e, sessionId?: string, limit?: number) => memoryManager.getSummaries(sessionId, limit))
+  ipcMain.handle('memory:search-summaries',  (_e, q: string, limit?: number) => memoryManager.searchSummaries(q, limit))
+  ipcMain.handle('memory:set-project-ctx',   (_e, pid: string, key: string, val: string) => { memoryManager.setProjectContext(pid, key, val); return true })
+  ipcMain.handle('memory:get-project-ctx',   (_e, pid: string, key?: string) => memoryManager.getProjectContext(pid, key))
+  ipcMain.handle('memory:delete-project-ctx',(_e, pid: string, key?: string) => { memoryManager.deleteProjectContext(pid, key); return true })
+  ipcMain.handle('memory:build-context',     (_e, opts?: { projectId?: string; maxFacts?: number; maxSummaries?: number }) => memoryManager.buildContextBlock(opts))
+  ipcMain.handle('memory:stats',             () => memoryManager.stats())
+
+  // ── Codebase Indexer ───────────────────────────────────────────────────────────
+  ipcMain.handle('indexer:open',           (_e, root: string) => codebaseIndexer.open(root))
+  ipcMain.handle('indexer:close',          () => codebaseIndexer.close())
+  ipcMain.handle('indexer:is-open',        () => codebaseIndexer.isOpen())
+  ipcMain.handle('indexer:search',         (_e, q: string, opts?: { ext?: string; limit?: number }) => codebaseIndexer.search(q, opts))
+  ipcMain.handle('indexer:search-symbols', (_e, name: string) => codebaseIndexer.searchSymbols(name))
+  ipcMain.handle('indexer:get-file',       (_e, relPath: string) => codebaseIndexer.getFile(relPath))
+  ipcMain.handle('indexer:list',           (_e, opts?: { ext?: string; dir?: string }) => codebaseIndexer.list(opts))
+  ipcMain.handle('indexer:stats',          () => codebaseIndexer.stats())
+  // Relay indexer events
+  codebaseIndexer.on('indexed', (filePath: string) => {
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('indexer:indexed', filePath)
+  })
+  codebaseIndexer.on('ready', (stats: unknown) => {
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('indexer:ready', stats)
+  })
 
   // ── Window ────────────────────────────────────────────────────────────────────
   ipcMain.on('window:minimize',  () => mainWindow?.minimize())

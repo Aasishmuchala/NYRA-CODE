@@ -11,7 +11,7 @@ import {
   Plus, Search, Settings, Cpu, X, Clock, Moon,
   Loader2, AlertTriangle, RefreshCw, BookOpen,
   Download, GitBranch, Hash, Pin, MoreHorizontal,
-  Trash2,
+  Trash2, Terminal, GitCommitHorizontal,
 } from 'lucide-react'
 
 import { useOpenClaw } from './hooks/useOpenClaw'
@@ -32,6 +32,8 @@ import { ArtifactPane, parseArtifacts }    from './components/ArtifactPane'
 import { PromptLibrary }       from './components/PromptLibrary'
 import { ExportModal }         from './components/ExportModal'
 import { VoiceInput }          from './components/VoiceInput'
+import TerminalPanel           from './components/Terminal'
+import { GitPanel }            from './components/GitPanel'
 import type { Project }        from '../preload/index'
 import type { ChatMessage }    from './hooks/useOpenClaw'
 
@@ -67,6 +69,8 @@ export const App: React.FC = () => {
   const [model, setModel]                 = useState('auto')
   const [zoomLabel, setZoomLabel]         = useState<string | null>(null)
   const [artifactOpen, setArtifactOpen]   = useState(false)
+  const [terminalOpen, setTerminalOpen]   = useState(false)
+  const [gitPanelOpen, setGitPanelOpen]   = useState(false)
 
   // ── Projects state ─────────────────────────────────────────────────────────
   const [projects, setProjects]           = useState<Project[]>([])
@@ -341,6 +345,14 @@ export const App: React.FC = () => {
             <button onClick={() => setModal('prompts')} title="Prompt Library" className="p-1.5 rounded-lg text-white/20 hover:text-white/50 hover:bg-white/[0.04] transition-colors">
               <BookOpen size={13} />
             </button>
+            <button onClick={() => setTerminalOpen(v => !v)} title="Terminal  ⌘`"
+              className={`p-1.5 rounded-lg transition-colors ${terminalOpen ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+              <Terminal size={13} />
+            </button>
+            <button onClick={() => setGitPanelOpen(v => !v)} title="Git"
+              className={`p-1.5 rounded-lg transition-colors ${gitPanelOpen ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+              <GitCommitHorizontal size={13} />
+            </button>
             <button onClick={() => setPanel(p => p === 'scheduled' ? 'none' : 'scheduled')} title="Scheduled tasks"
               className={`p-1.5 rounded-lg transition-colors ${panel === 'scheduled' ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
               <Clock size={13} />
@@ -472,7 +484,13 @@ export const App: React.FC = () => {
             <SettingsPanel onClose={() => setPanel('none')} />
           </div>
         )}
+
+        {/* ── Git panel (slide-in drawer) ─────────────────────────────────── */}
+        <GitPanel visible={gitPanelOpen} onClose={() => setGitPanelOpen(false)} />
       </div>
+
+      {/* ── Terminal panel (bottom) ─────────────────────────────────────── */}
+      <TerminalPanel visible={terminalOpen} onToggle={() => setTerminalOpen(v => !v)} />
 
       {/* Status bar */}
       <StatusBar status={oc.status} wsUrl={oc.wsUrl} log={oc.log} />
