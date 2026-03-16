@@ -1,4 +1,6 @@
 import { EventEmitter } from 'events';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
 
 type Locale = string;
 type PluralForm = 'zero' | 'one' | 'few' | 'many' | 'other';
@@ -73,6 +75,7 @@ class I18nManager extends EventEmitter {
   private currentLocale: Locale = 'en';
   private translations: TranslationBundle = {};
   private fallbackLocale: Locale = 'en';
+  private dataDir: string = '';
 
   constructor() {
     super();
@@ -84,6 +87,65 @@ class I18nManager extends EventEmitter {
    */
   private initializeDefaultLocale(): void {
     this.translations['en'] = { ...DEFAULT_TRANSLATIONS };
+  }
+
+  /**
+   * Initialize I18nManager and load persisted locale preference
+   */
+  init(): void {
+    this.dataDir = join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra', 'os-integration');
+
+    // Create directory if it doesn't exist
+    if (!existsSync(this.dataDir)) {
+      mkdirSync(this.dataDir, { recursive: true });
+    }
+
+    // Load locale preference and custom translations from disk
+    const i18nPath = join(this.dataDir, 'i18n-config.json');
+    if (existsSync(i18nPath)) {
+      try {
+        const data = JSON.parse(readFileSync(i18nPath, 'utf-8')) as {
+          currentLocale?: Locale;
+          translations?: Record<string, Record<string, string>>;
+        };
+        if (data.currentLocale) {
+          this.currentLocale = data.currentLocale;
+        }
+        if (data.translations) {
+          for (const [locale, bundle] of Object.entries(data.translations)) {
+            if (locale === 'en') continue; // Don't overwrite built-in defaults
+            this.translations[locale as Locale] = { ...(this.translations[locale as Locale] || {}), ...bundle };
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load i18n config:', error);
+      }
+    }
+  }
+
+  /**
+   * Shutdown I18nManager and persist locale preference to disk
+   */
+  shutdown(): void {
+    if (!this.dataDir) return;
+
+    try {
+      const i18nPath = join(this.dataDir, 'i18n-config.json');
+      // Persist custom translations (non-English locales)
+      const customTranslations: Record<string, Record<string, string>> = {};
+      for (const [locale, bundle] of Object.entries(this.translations)) {
+        if (locale !== 'en' && bundle && Object.keys(bundle).length > 0) {
+          customTranslations[locale] = bundle;
+        }
+      }
+      const data = {
+        currentLocale: this.currentLocale,
+        translations: customTranslations,
+      };
+      writeFileSync(i18nPath, JSON.stringify(data, null, 2), 'utf-8');
+    } catch (error) {
+      console.error('Failed to save i18n config:', error);
+    }
   }
 
   /**

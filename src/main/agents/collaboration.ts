@@ -12,6 +12,8 @@
  * - HumanCheckpoint: Blocks execution until user approves high-risk actions
  */
 import { EventEmitter } from 'events'
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { join } from 'path'
 
 // Priority levels for agent messages
 export enum Priority {
@@ -55,6 +57,14 @@ export interface PlanStep {
 export class PriorityMessageQueue {
   private queues: Map<string, AgentMessage[]> = new Map() // Per-agent queues
   private globalQueue: AgentMessage[] = []
+
+  init(): void {
+    // Priority queue is runtime-only, no persistent state to load
+  }
+
+  shutdown(): void {
+    // Priority queue is runtime-only, no state to save
+  }
 
   enqueue(msg: AgentMessage): void {
     // Add to global queue sorted by priority
@@ -124,6 +134,45 @@ export class SharedWorkspace {
   private store: Map<string, WorkspaceEntry> = new Map()
   private history: Array<{ key: string; value: unknown; owner: string; version: number; timestamp: number }> = []
 
+  init(): void {
+    const dataDir = join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra')
+    const filePath = join(dataDir, 'shared-workspace.json')
+
+    try {
+      if (existsSync(filePath)) {
+        const data = readFileSync(filePath, 'utf-8')
+        const parsed = JSON.parse(data)
+        if (parsed.store && Array.isArray(parsed.store)) {
+          this.store.clear()
+          for (const entry of parsed.store) {
+            this.store.set(entry.key, entry)
+          }
+        }
+        if (parsed.history && Array.isArray(parsed.history)) {
+          this.history = parsed.history
+        }
+      }
+    } catch (err) {
+      console.warn(`Failed to load shared-workspace.json: ${err}`)
+    }
+  }
+
+  shutdown(): void {
+    const dataDir = join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra')
+    mkdirSync(dataDir, { recursive: true })
+    const filePath = join(dataDir, 'shared-workspace.json')
+
+    try {
+      const data = {
+        store: Array.from(this.store.values()),
+        history: this.history,
+      }
+      writeFileSync(filePath, JSON.stringify(data, null, 2))
+    } catch (err) {
+      console.warn(`Failed to save shared-workspace.json: ${err}`)
+    }
+  }
+
   read(key: string): WorkspaceEntry | undefined {
     return this.store.get(key)
   }
@@ -173,6 +222,41 @@ export class PlanExecuteReviewPipeline extends EventEmitter {
     super()
     this.queue = queue
     this.workspace = workspace
+  }
+
+  init(): void {
+    const dataDir = join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra')
+    const filePath = join(dataDir, 'pipeline-plans.json')
+
+    try {
+      if (existsSync(filePath)) {
+        const data = readFileSync(filePath, 'utf-8')
+        const parsed = JSON.parse(data)
+        if (parsed.plans && Array.isArray(parsed.plans)) {
+          this.plans.clear()
+          for (const [planId, steps] of parsed.plans) {
+            this.plans.set(planId, steps)
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`Failed to load pipeline-plans.json: ${err}`)
+    }
+  }
+
+  shutdown(): void {
+    const dataDir = join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra')
+    mkdirSync(dataDir, { recursive: true })
+    const filePath = join(dataDir, 'pipeline-plans.json')
+
+    try {
+      const data = {
+        plans: Array.from(this.plans.entries()),
+      }
+      writeFileSync(filePath, JSON.stringify(data, null, 2))
+    } catch (err) {
+      console.warn(`Failed to save pipeline-plans.json: ${err}`)
+    }
   }
 
   createPlan(planId: string, steps: Omit<PlanStep, 'status' | 'output' | 'reviewNotes'>[]): PlanStep[] {

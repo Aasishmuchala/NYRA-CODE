@@ -1,5 +1,7 @@
 import { EventEmitter } from 'events';
 import { randomUUID } from 'crypto';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
 
 /**
  * Represents a learned procedure from successful task execution
@@ -42,6 +44,45 @@ interface AgentScoreSnapshot {
 class ProceduralMemory extends EventEmitter {
   private procedures: Map<string, LearnedProcedure> = new Map();
   private readonly maxProcedures = 1000;
+  private dataDir: string = '';
+
+  /**
+   * Initialize ProceduralMemory and load persisted procedures
+   */
+  init(): void {
+    this.dataDir = join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra', 'platform');
+
+    // Create directory if it doesn't exist
+    if (!existsSync(this.dataDir)) {
+      mkdirSync(this.dataDir, { recursive: true });
+    }
+
+    // Load procedures from disk
+    const proceduresPath = join(this.dataDir, 'procedural-memory.json');
+    if (existsSync(proceduresPath)) {
+      try {
+        const data = JSON.parse(readFileSync(proceduresPath, 'utf-8')) as LearnedProcedure[];
+        this.import(data);
+      } catch (error) {
+        console.error('Failed to load procedural memory:', error);
+      }
+    }
+  }
+
+  /**
+   * Shutdown ProceduralMemory and persist procedures to disk
+   */
+  shutdown(): void {
+    if (!this.dataDir) return;
+
+    try {
+      const proceduresPath = join(this.dataDir, 'procedural-memory.json');
+      const data = this.export();
+      writeFileSync(proceduresPath, JSON.stringify(data, null, 2), 'utf-8');
+    } catch (error) {
+      console.error('Failed to save procedural memory:', error);
+    }
+  }
 
   /**
    * Learn a new procedure from successful task completion
@@ -171,6 +212,54 @@ class FeedbackLoop extends EventEmitter {
   private outcomes: TaskOutcome[] = [];
   private agentScores: Map<string, number[]> = new Map();
   private readonly maxOutcomes = 10000;
+  private dataDir: string = '';
+
+  /**
+   * Initialize FeedbackLoop and load persisted feedback history
+   */
+  init(): void {
+    this.dataDir = join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra', 'platform');
+
+    // Create directory if it doesn't exist
+    if (!existsSync(this.dataDir)) {
+      mkdirSync(this.dataDir, { recursive: true });
+    }
+
+    // Load feedback history from disk
+    const feedbackPath = join(this.dataDir, 'feedback-history.json');
+    if (existsSync(feedbackPath)) {
+      try {
+        const data = JSON.parse(readFileSync(feedbackPath, 'utf-8')) as {
+          outcomes: TaskOutcome[];
+          agentScores: Record<string, number[]>;
+        };
+        this.outcomes = data.outcomes || [];
+        if (data.agentScores) {
+          this.agentScores = new Map(Object.entries(data.agentScores));
+        }
+      } catch (error) {
+        console.error('Failed to load feedback history:', error);
+      }
+    }
+  }
+
+  /**
+   * Shutdown FeedbackLoop and persist feedback history to disk
+   */
+  shutdown(): void {
+    if (!this.dataDir) return;
+
+    try {
+      const feedbackPath = join(this.dataDir, 'feedback-history.json');
+      const data = {
+        outcomes: this.outcomes,
+        agentScores: Object.fromEntries(this.agentScores),
+      };
+      writeFileSync(feedbackPath, JSON.stringify(data, null, 2), 'utf-8');
+    } catch (error) {
+      console.error('Failed to save feedback history:', error);
+    }
+  }
 
   /**
    * Record a task outcome with user rating (1-5)

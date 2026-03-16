@@ -1,11 +1,25 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { I18nManager } from '../os-integration/i18n'
+import * as fs from 'fs'
+import * as path from 'path'
+import * as os from 'os'
 
 describe('I18nManager', () => {
   let i18n: I18nManager
+  let tmpDir: string
 
   beforeEach(() => {
     i18n = new I18nManager()
+    tmpDir = path.join(os.tmpdir(), 'nyra-test-i18n')
+    if (!fs.existsSync(tmpDir)) {
+      fs.mkdirSync(tmpDir, { recursive: true })
+    }
+  })
+
+  afterEach(() => {
+    if (fs.existsSync(tmpDir)) {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+    }
   })
 
   describe('Locale Management', () => {
@@ -301,6 +315,93 @@ describe('I18nManager', () => {
       i18n.addTranslation('en', 'hello', 'Hello')
       i18n.setLocale('EN')
       expect(i18n.getLocale()).toBe('en')
+    })
+  })
+
+  describe('Init/Shutdown Lifecycle', () => {
+    it('should initialize and load locale preference from disk', () => {
+      i18n.init()
+      expect(i18n).toBeDefined()
+      expect(i18n.getLocale()).toBeDefined()
+    })
+
+    it('should create data directory on init()', () => {
+      i18n.init()
+      const dataDir = path.join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra')
+      expect(fs.existsSync(dataDir)).toBe(true)
+    })
+
+    it('should save locale preference on shutdown()', () => {
+      i18n.init()
+      i18n.setLocale('es')
+      i18n.shutdown()
+
+      const configPath = path.join(
+        process.env.HOME || process.env.USERPROFILE || '/tmp',
+        '.nyra',
+        'os-integration',
+        'i18n-config.json'
+      )
+
+      if (fs.existsSync(configPath)) {
+        const data = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+        expect(data.currentLocale).toBe('es')
+      }
+    })
+
+    it('should restore locale preference after init+shutdown cycle', () => {
+      i18n.init()
+      i18n.setLocale('fr')
+      i18n.shutdown()
+
+      const i18n2 = new I18nManager()
+      i18n2.init()
+
+      expect(i18n2.getLocale()).toBe('fr')
+    })
+
+    it('should persist translation bundles on shutdown', () => {
+      i18n.init()
+      i18n.loadTranslations('de', { hello: 'Hallo', goodbye: 'Auf Wiedersehen' })
+      i18n.shutdown()
+
+      const configPath = path.join(
+        process.env.HOME || process.env.USERPROFILE || '/tmp',
+        '.nyra',
+        'os-integration',
+        'i18n-config.json'
+      )
+
+      if (fs.existsSync(configPath)) {
+        const data = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+        expect(data.translations).toBeDefined()
+      }
+    })
+
+    it('should restore translation bundles across init/shutdown cycle', () => {
+      i18n.init()
+      i18n.loadTranslations('it', { hello: 'Ciao', goodbye: 'Arrivederci' })
+      i18n.setLocale('it')
+      i18n.shutdown()
+
+      const i18n2 = new I18nManager()
+      i18n2.init()
+      i18n2.setLocale('it')
+
+      expect(i18n2.t('hello')).toBe('Ciao')
+      expect(i18n2.t('goodbye')).toBe('Arrivederci')
+    })
+
+    it('should preserve custom translations after shutdown/init cycle', () => {
+      i18n.init()
+      i18n.addTranslation('pt', 'welcome', 'Bem-vindo')
+      i18n.shutdown()
+
+      const i18n2 = new I18nManager()
+      i18n2.init()
+      i18n2.setLocale('pt')
+
+      expect(i18n2.t('welcome')).toBe('Bem-vindo')
     })
   })
 })

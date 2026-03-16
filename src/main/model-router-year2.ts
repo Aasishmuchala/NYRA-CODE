@@ -13,6 +13,8 @@
  * - Available local models and their capabilities
  */
 import { EventEmitter } from 'events'
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { join } from 'path'
 
 export type ModelTier = 'local' | 'cloud-fast' | 'cloud-smart' | 'cloud-reasoning'
 
@@ -74,6 +76,53 @@ export class ModelRouter extends EventEmitter {
     super()
     this.models = models || [...DEFAULT_MODELS]
     this.budget = { dailyLimitCents: 500, monthlyLimitCents: 5000, spentTodayCents: 0, spentThisMonthCents: 0 }
+  }
+
+  init(): void {
+    const dataDir = join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra')
+    const filePath = join(dataDir, 'model-router.json')
+
+    try {
+      if (existsSync(filePath)) {
+        const data = readFileSync(filePath, 'utf-8')
+        const parsed = JSON.parse(data)
+
+        if (parsed.budget) {
+          this.budget = parsed.budget
+        }
+        if (parsed.models && Array.isArray(parsed.models)) {
+          // Merge loaded model availability and routing configs
+          for (const loadedModel of parsed.models) {
+            const idx = this.models.findIndex(m => m.id === loadedModel.id)
+            if (idx >= 0) {
+              this.models[idx].available = loadedModel.available
+            }
+          }
+        }
+        if (parsed.routingHistory && Array.isArray(parsed.routingHistory)) {
+          this.routingHistory = parsed.routingHistory
+        }
+      }
+    } catch (err) {
+      console.warn(`Failed to load model-router.json: ${err}`)
+    }
+  }
+
+  shutdown(): void {
+    const dataDir = join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra')
+    mkdirSync(dataDir, { recursive: true })
+    const filePath = join(dataDir, 'model-router.json')
+
+    try {
+      const data = {
+        budget: this.budget,
+        models: this.models,
+        routingHistory: this.routingHistory,
+      }
+      writeFileSync(filePath, JSON.stringify(data, null, 2))
+    } catch (err) {
+      console.warn(`Failed to save model-router.json: ${err}`)
+    }
   }
 
   route(query: QueryContext): RoutingDecision {

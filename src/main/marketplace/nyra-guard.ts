@@ -77,13 +77,52 @@ const INCOMPATIBLE_LICENSES = new Set([
 export class NyraGuard {
   private issues: ScanIssue[] = []
   private currentPluginId: string = ''
+  private scanHistory: Record<string, ScanReport[]> = {}
+  private dataDir: string
+
+  constructor() {
+    this.dataDir = path.join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra')
+  }
+
+  /**
+   * Initialize: load scan history from disk
+   */
+  init(): void {
+    try {
+      fs.mkdirSync(this.dataDir, { recursive: true })
+      const historyPath = path.join(this.dataDir, 'nyra-guard-history.json')
+
+      if (fs.existsSync(historyPath)) {
+        const data = fs.readFileSync(historyPath, 'utf-8')
+        this.scanHistory = JSON.parse(data)
+        console.log('[NyraGuard] Loaded scan history')
+      }
+    } catch (err) {
+      console.error('[NyraGuard] Failed to load scan history:', err)
+      this.scanHistory = {}
+    }
+  }
+
+  /**
+   * Shutdown: save scan results to disk
+   */
+  shutdown(): void {
+    try {
+      fs.mkdirSync(this.dataDir, { recursive: true })
+      const historyPath = path.join(this.dataDir, 'nyra-guard-history.json')
+      fs.writeFileSync(historyPath, JSON.stringify(this.scanHistory, null, 2), 'utf-8')
+      console.log('[NyraGuard] Saved scan history')
+    } catch (err) {
+      console.error('[NyraGuard] Failed to save scan history:', err)
+    }
+  }
 
   /**
    * Scan a plugin directory
    */
   scanPlugin(pluginDir: string): ScanReport {
     this.issues = []
-    
+
     // Extract pluginId from directory path
     this.currentPluginId = path.basename(pluginDir)
 
@@ -112,7 +151,15 @@ export class NyraGuard {
     // Scan licenses
     this.scanLicenses(packageJson)
 
-    return this.generateReport()
+    const report = this.generateReport()
+
+    // Persist scan result to history
+    if (!this.scanHistory[this.currentPluginId]) {
+      this.scanHistory[this.currentPluginId] = []
+    }
+    this.scanHistory[this.currentPluginId].push(report)
+
+    return report
   }
 
   /**

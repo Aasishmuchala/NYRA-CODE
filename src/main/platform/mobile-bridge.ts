@@ -3,7 +3,7 @@ import { createServer, Server, IncomingMessage, ServerResponse } from 'http';
 import { randomBytes, createHmac } from 'crypto';
 import { homedir } from 'os';
 import { join } from 'path';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 
 export interface DeviceInfo {
   id: string;
@@ -56,8 +56,38 @@ class MobileBridge extends EventEmitter {
 
   constructor() {
     super();
-    this.dataDir = join(homedir(), '.nyra-desktop', 'mobile');
+    this.dataDir = join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra', 'platform', 'mobile');
+  }
+
+  /**
+   * Initialize MobileBridge and load persisted device pairings
+   */
+  init(): void {
+    // Create directory if it doesn't exist
+    if (!existsSync(this.dataDir)) {
+      mkdirSync(this.dataDir, { recursive: true });
+    }
+
+    // Load devices from disk
     this.loadDevices();
+  }
+
+  /**
+   * Shutdown MobileBridge and persist device pairings
+   */
+  shutdown(): void {
+    // Save devices to disk
+    this.saveDevices();
+
+    // Close server if running
+    if (this.server) {
+      this.server.close();
+      this.server = null;
+    }
+
+    // Clear all timers
+    this.inactivityTimers.forEach((timer) => clearTimeout(timer));
+    this.inactivityTimers.clear();
   }
 
   /**

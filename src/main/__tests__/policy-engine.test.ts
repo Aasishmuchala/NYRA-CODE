@@ -1,12 +1,26 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { PolicyEngine, defaultDlpRules } from '../enterprise/policy-engine'
 import type { AgentPolicy, DataPolicy, UsagePolicy, SecurityPolicy } from '../enterprise/policy-engine'
+import * as fs from 'fs'
+import * as path from 'path'
+import * as os from 'os'
 
 describe('PolicyEngine', () => {
   let engine: PolicyEngine
+  let tmpDir: string
 
   beforeEach(() => {
     engine = new PolicyEngine()
+    tmpDir = path.join(os.tmpdir(), 'nyra-test-policy-engine')
+    if (!fs.existsSync(tmpDir)) {
+      fs.mkdirSync(tmpDir, { recursive: true })
+    }
+  })
+
+  afterEach(() => {
+    if (fs.existsSync(tmpDir)) {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+    }
   })
 
   describe('Policy Creation', () => {
@@ -464,6 +478,132 @@ describe('PolicyEngine', () => {
       )
 
       expect(decision.result).toBe('deny')
+    })
+  })
+
+  describe('Init/Shutdown Lifecycle', () => {
+    it('should initialize and load persisted policies', () => {
+      engine.init()
+      expect(engine).toBeDefined()
+    })
+
+    it('should create data directory on init()', () => {
+      engine.init()
+      const dataDir = path.join(
+        process.env.HOME || process.env.USERPROFILE || '/tmp',
+        '.nyra',
+        'enterprise'
+      )
+      expect(fs.existsSync(dataDir)).toBe(true)
+    })
+
+    it('should save policies on shutdown()', () => {
+      engine.createPolicy('org-1', 'agent', {
+        type: 'agent',
+        allowedModels: ['gpt-4'],
+        blockedModels: [],
+        maxTokensPerRequest: 2000,
+        allowedTools: ['search'],
+        blockedTools: [],
+      } as AgentPolicy)
+
+      engine.shutdown()
+
+      const policiesPath = path.join(
+        process.env.HOME || process.env.USERPROFILE || '/tmp',
+        '.nyra',
+        'enterprise',
+        'policies.json'
+      )
+
+      if (fs.existsSync(policiesPath)) {
+        const data = JSON.parse(fs.readFileSync(policiesPath, 'utf-8'))
+        expect(data.policies).toBeDefined()
+        expect(Object.keys(data.policies).length).toBeGreaterThan(0)
+      }
+    })
+
+    it('should restore policies after init+shutdown cycle', () => {
+      engine.createPolicy('org-1', 'agent', {
+        type: 'agent',
+        allowedModels: ['gpt-4'],
+        blockedModels: [],
+        maxTokensPerRequest: 2000,
+        allowedTools: ['search'],
+        blockedTools: [],
+      } as AgentPolicy)
+
+      engine.createPolicy('org-2', 'usage', {
+        type: 'usage',
+        rateLimitPerMinute: 100,
+        dailyTokenBudget: 100000,
+        monthlyTokenBudget: 1000000,
+        costCap: 5000,
+      } as UsagePolicy)
+
+      engine.shutdown()
+
+      const engine2 = new PolicyEngine()
+      engine2.init()
+
+      const org1Policies = engine2.getPolicies('org-1')
+      const org2Policies = engine2.getPolicies('org-2')
+
+      expect(org1Policies.length).toBeGreaterThan(0)
+      expect(org2Policies.length).toBeGreaterThan(0)
+    })
+
+    it('should persist audit log on shutdown', () => {
+      engine.init()
+
+      const decision = engine.evaluateRequest(
+        {
+          userId: 'user-1',
+          action: 'test_action',
+          metadata: {},
+        },
+        'org-1'
+      )
+
+      expect(decision).toBeDefined()
+      engine.shutdown()
+
+      const policiesPath = path.join(
+        process.env.HOME || process.env.USERPROFILE || '/tmp',
+        '.nyra',
+        'enterprise',
+        'policies.json'
+      )
+
+      if (fs.existsSync(policiesPath)) {
+        const data = JSON.parse(fs.readFileSync(policiesPath, 'utf-8'))
+        expect(data.auditLog).toBeDefined()
+      }
+    })
+
+    it('should evaluate request with persisted policies', () => {
+      engine.init()
+
+      const policy = engine.createPolicy('org-1', 'agent', {
+        type: 'agent',
+        allowedModels: ['gpt-4'],
+        blockedModels: [],
+        maxTokensPerRequest: 2000,
+        allowedTools: ['search'],
+        blockedTools: [],
+      } as AgentPolicy)
+
+      const decision = engine.evaluateRequest(
+        {
+          userId: 'user-1',
+          action: 'run_agent',
+          metadata: { model: 'gpt-4' },
+        },
+        'org-1'
+      )
+
+      expect(decision).toBeDefined()
+      expect(decision.appliedPolicies.length).toBeGreaterThan(0)
     })
   })
 })

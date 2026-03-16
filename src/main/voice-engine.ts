@@ -17,6 +17,8 @@ import { EventEmitter } from 'events'
 import * as path from 'path'
 import * as fs from 'fs'
 import * as os from 'os'
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { join } from 'path'
 
 export type STTBackend = 'whisper-local' | 'openai-whisper' | 'system'
 export type TTSBackend = 'system' | 'openai-tts' | 'elevenlabs'
@@ -68,6 +70,33 @@ export class VoiceEngine extends EventEmitter {
   constructor(config: Partial<VoiceConfig> = {}) {
     super()
     this.config = { ...DEFAULT_CONFIG, ...config }
+  }
+
+  init(): void {
+    const dataDir = join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra')
+    const filePath = join(dataDir, 'voice-config.json')
+
+    try {
+      if (existsSync(filePath)) {
+        const data = readFileSync(filePath, 'utf-8')
+        const savedConfig = JSON.parse(data)
+        this.config = { ...this.config, ...savedConfig }
+      }
+    } catch (err) {
+      console.warn(`Failed to load voice-config.json: ${err}`)
+    }
+  }
+
+  shutdown(): void {
+    const dataDir = join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra')
+    mkdirSync(dataDir, { recursive: true })
+    const filePath = join(dataDir, 'voice-config.json')
+
+    try {
+      writeFileSync(filePath, JSON.stringify(this.config, null, 2))
+    } catch (err) {
+      console.warn(`Failed to save voice-config.json: ${err}`)
+    }
   }
 
   // ── STT Methods ─────────────────────────────────────────────────────

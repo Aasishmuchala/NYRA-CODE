@@ -1,9 +1,28 @@
 /**
  * Vertical Agent Packs for Industry-Specific Automation
- * 
+ *
  * Provides pre-configured agent packs tailored to specific industries (Legal, Finance, Sales, Engineering).
  * Each pack contains specialized agents, tools, and prompts for domain-specific tasks.
  */
+
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+function getDataDir(): string {
+  const homeDir = process.env.HOME || process.env.USERPROFILE || '/tmp';
+  return join(homeDir, '.nyra', 'enterprise');
+}
+
+function ensureDataDir(): void {
+  const dir = getDataDir();
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+}
 
 // Interfaces
 
@@ -595,6 +614,47 @@ export class VerticalAgentManager {
   }
 
   /**
+   * Load persisted state from disk
+   */
+  init(): void {
+    ensureDataDir();
+    try {
+      const packPath = join(getDataDir(), 'vertical-agents.json');
+      if (existsSync(packPath)) {
+        const data = JSON.parse(readFileSync(packPath, 'utf-8'));
+        if (data.teamActivations && typeof data.teamActivations === 'object') {
+          Object.entries(data.teamActivations).forEach(([teamId, packIds]) => {
+            this.teamActivations.set(teamId, new Set(packIds as string[]));
+          });
+        }
+      }
+    } catch (err) {
+      // Fail silently on corrupt file
+    }
+  }
+
+  /**
+   * Save state to disk
+   */
+  shutdown(): void {
+    try {
+      const packPath = join(getDataDir(), 'vertical-agents.json');
+      ensureDataDir();
+      const data = {
+        teamActivations: Object.fromEntries(
+          Array.from(this.teamActivations).map(([teamId, packIdSet]) => [
+            teamId,
+            Array.from(packIdSet),
+          ])
+        ),
+      };
+      writeFileSync(packPath, JSON.stringify(data, null, 2));
+    } catch (err) {
+      // Fail silently on write error
+    }
+  }
+
+  /**
    * Register an agent pack
    */
   registerPack(pack: AgentPack): void {
@@ -660,3 +720,6 @@ export class VerticalAgentManager {
 
 // Singleton instance
 export const verticalAgentManager = new VerticalAgentManager();
+
+// Initialize on module load
+verticalAgentManager.init();

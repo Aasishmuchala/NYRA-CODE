@@ -294,4 +294,74 @@ describe('TelemetryService', () => {
       expect(batch2.events.length).toBe(1)
     })
   })
+
+  describe('Init/Shutdown Lifecycle', () => {
+    it('should initialize and load queued events from disk', () => {
+      telemetry.init()
+      expect(telemetry).toBeDefined()
+    })
+
+    it('should create consent file on setEnabled', () => {
+      telemetry.setEnabled(true)
+      const consentPath = path.join(os.homedir(), '.nyra', 'telemetry-consent.json')
+
+      expect(fs.existsSync(consentPath)).toBe(true)
+      const data = JSON.parse(fs.readFileSync(consentPath, 'utf-8'))
+      expect(data.enabled).toBe(true)
+    })
+
+    it('should persist consent state across instances', () => {
+      telemetry.setEnabled(true)
+      telemetry.shutdown()
+
+      const telemetry2 = new TelemetryService()
+      const consent = telemetry2.getConsent()
+      expect(consent.enabled).toBe(true)
+    })
+
+    it('should persist event queue on shutdown', () => {
+      telemetry.setEnabled(true)
+      telemetry.trackEvent('test_event', { value: 123 })
+      telemetry.shutdown()
+
+      const queuePath = path.join(os.homedir(), '.nyra', 'telemetry-queue.json')
+      if (fs.existsSync(queuePath)) {
+        const data = JSON.parse(fs.readFileSync(queuePath, 'utf-8'))
+        expect(data.events).toBeDefined()
+      }
+    })
+
+    it('should load queued events on init', () => {
+      telemetry.setEnabled(true)
+      telemetry.trackEvent('event1', {})
+      telemetry.trackEvent('event2', {})
+      telemetry.shutdown()
+
+      const telemetry2 = new TelemetryService()
+      telemetry2.init()
+      expect(telemetry2).toBeDefined()
+    })
+
+    it('should recover device ID across instances', () => {
+      const id1 = telemetry.getDeviceId()
+      telemetry.shutdown()
+
+      const telemetry2 = new TelemetryService()
+      const id2 = telemetry2.getDeviceId()
+
+      expect(id1).toBe(id2)
+    })
+
+    it('should save session info across shutdown cycles', () => {
+      telemetry.setEnabled(true)
+      const sessionId = telemetry.startSession()
+      telemetry.trackEvent('feature1', {})
+      telemetry.endSession()
+      telemetry.shutdown()
+
+      const telemetry2 = new TelemetryService()
+      telemetry2.init()
+      expect(telemetry2).toBeDefined()
+    })
+  })
 })

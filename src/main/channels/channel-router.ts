@@ -9,6 +9,8 @@
  */
 
 import { EventEmitter } from 'events'
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { join } from 'path'
 
 interface ChannelMessage {
   channelType: 'telegram' | 'discord' | 'slack'
@@ -30,10 +32,46 @@ interface SessionMapping {
 export class ChannelRouter extends EventEmitter {
   private sessions: Map<string, SessionMapping> = new Map()
   private proxyWsUrl: string
+  private dataDir: string
 
-  constructor(proxyWsUrl: string) {
+  constructor(proxyWsUrl: string = '') {
     super()
     this.proxyWsUrl = proxyWsUrl
+    this.dataDir = join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra')
+  }
+
+  /**
+   * Initialize: load persisted session mappings from disk
+   */
+  init(): void {
+    try {
+      mkdirSync(this.dataDir, { recursive: true })
+      const sessionsPath = join(this.dataDir, 'channel-sessions.json')
+
+      if (existsSync(sessionsPath)) {
+        const data = readFileSync(sessionsPath, 'utf-8')
+        const mappings = JSON.parse(data) as Array<[string, SessionMapping]>
+        this.sessions = new Map(mappings)
+        console.log(`[ChannelRouter] Loaded ${this.sessions.size} session mappings`)
+      }
+    } catch (err) {
+      console.error('[ChannelRouter] Failed to load session mappings:', err)
+    }
+  }
+
+  /**
+   * Shutdown: save current session mappings to disk
+   */
+  shutdown(): void {
+    try {
+      mkdirSync(this.dataDir, { recursive: true })
+      const sessionsPath = join(this.dataDir, 'channel-sessions.json')
+      const mappings = Array.from(this.sessions.entries())
+      writeFileSync(sessionsPath, JSON.stringify(mappings, null, 2), 'utf-8')
+      console.log(`[ChannelRouter] Saved ${this.sessions.size} session mappings`)
+    } catch (err) {
+      console.error('[ChannelRouter] Failed to save session mappings:', err)
+    }
   }
 
   private makeKey(channelType: string, channelId: string | number): string {
@@ -166,4 +204,4 @@ export class ChannelRouter extends EventEmitter {
   }
 }
 
-export const channelRouter = new ChannelRouter()
+export const channelRouter = new ChannelRouter('')

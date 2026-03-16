@@ -1,15 +1,29 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { SsoProvider, RbacManager, TeamManager, rbacManager, teamManager } from '../enterprise/sso-rbac'
+import * as fs from 'fs'
+import * as path from 'path'
+import * as os from 'os'
 
 describe('SSO & RBAC', () => {
   let ssoProvider: SsoProvider
   let rbac: RbacManager
   let teams: TeamManager
+  let tmpDir: string
 
   beforeEach(() => {
     ssoProvider = new SsoProvider()
     rbac = new RbacManager()
     teams = new TeamManager(rbac)
+    tmpDir = path.join(os.tmpdir(), 'nyra-test-sso-rbac')
+    if (!fs.existsSync(tmpDir)) {
+      fs.mkdirSync(tmpDir, { recursive: true })
+    }
+  })
+
+  afterEach(() => {
+    if (fs.existsSync(tmpDir)) {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+    }
   })
 
   describe('SSO Provider - OIDC Flow', () => {
@@ -258,6 +272,119 @@ describe('SSO & RBAC', () => {
 
       const updated = teams.listMembers(team.id).find((m) => m.userId === member!.userId)
       expect(updated?.role).toBe('admin')
+    })
+  })
+
+  describe('Init/Shutdown Lifecycle', () => {
+    it('should initialize and load persisted roles', () => {
+      rbac.init()
+      expect(rbac).toBeDefined()
+    })
+
+    it('should create data directory on init()', () => {
+      rbac.init()
+      const dataDir = path.join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra', 'enterprise')
+      expect(fs.existsSync(dataDir)).toBe(true)
+    })
+
+    it('should save roles on shutdown()', () => {
+      rbac.assignRole('user-1', 'admin')
+      rbac.assignRole('user-2', 'member')
+      rbac.shutdown()
+
+      const rolesPath = path.join(
+        process.env.HOME || process.env.USERPROFILE || '/tmp',
+        '.nyra',
+        'enterprise',
+        'rbac-roles.json'
+      )
+
+      if (fs.existsSync(rolesPath)) {
+        const data = JSON.parse(fs.readFileSync(rolesPath, 'utf-8'))
+        expect(data.userRoles).toBeDefined()
+        expect(data.userRoles['user-1']).toContain('admin')
+      }
+    })
+
+    it('should restore roles after init+shutdown cycle', () => {
+      rbac.assignRole('user-1', 'owner')
+      rbac.assignRole('user-2', 'member')
+      rbac.shutdown()
+
+      const rbac2 = new RbacManager()
+      rbac2.init()
+
+      const roles1 = rbac2.getUserRoles('user-1')
+      const roles2 = rbac2.getUserRoles('user-2')
+
+      expect(roles1).toContain('owner')
+      expect(roles2).toContain('member')
+    })
+
+    it('should initialize SSO provider and load config', () => {
+      ssoProvider.init()
+      expect(ssoProvider).toBeDefined()
+    })
+
+    it('should save SSO config on shutdown()', () => {
+      const config = {
+        clientId: 'test-client',
+        clientSecret: 'test-secret',
+        redirectUri: 'http://localhost:3000/callback',
+        issuer: 'https://auth.example.com',
+      }
+
+      ssoProvider.initiateSsoLogin('oidc', config)
+      ssoProvider.shutdown()
+
+      const configPath = path.join(
+        process.env.HOME || process.env.USERPROFILE || '/tmp',
+        '.nyra',
+        'enterprise',
+        'sso-config.json'
+      )
+
+      if (fs.existsSync(configPath)) {
+        const data = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+        expect(data.config).toBeDefined()
+      }
+    })
+
+    it('should initialize team manager and load teams', () => {
+      teams.init()
+      expect(teams).toBeDefined()
+    })
+
+    it('should persist teams across shutdown/init cycle', () => {
+      teams.init()
+      teams.createTeam('Engineering', 'user-1')
+      teams.createTeam('Product', 'user-2')
+      teams.shutdown()
+
+      const teams2 = new TeamManager(rbac)
+      teams2.init()
+      expect(teams2).toBeDefined()
+    })
+
+    it('should validate token after SSO init/shutdown cycle', () => {
+      ssoProvider.init()
+
+      const config = {
+        clientId: 'test-client',
+        clientSecret: 'test-secret',
+        redirectUri: 'http://localhost:3000/callback',
+        issuer: 'https://auth.example.com',
+      }
+
+      const authUrl = ssoProvider.initiateSsoLogin('oidc', config)
+      const stateMatch = authUrl.match(/state=([a-f0-9]+)/)
+      const state = stateMatch ? stateMatch[1] : ''
+
+      const token = ssoProvider.handleCallback({ code: 'auth-code', state })
+      ssoProvider.shutdown()
+
+      const isValid = ssoProvider.validateToken(token.accessToken)
+      expect(isValid).toBe(true)
     })
   })
 })

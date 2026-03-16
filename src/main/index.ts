@@ -426,10 +426,10 @@ app.whenReady().then(async () => {
 
     // ── Year 1: Channel Router, Plugin Sandbox, NyraGuard, Telemetry ────
     try {
-      channelRouter.init?.()
-      pluginSandbox.init?.()
-      nyraGuard.init?.()
-      telemetryService.init?.()
+      channelRouter.init()
+      pluginSandbox.init()
+      nyraGuard.init()
+      telemetryService.init()
       console.log('[Main] Year 1 services initialized (channel-router, plugin-sandbox, nyra-guard, telemetry)')
     } catch (err) {
       console.warn('[Main] Year 1 services init error (non-fatal):', err)
@@ -437,12 +437,12 @@ app.whenReady().then(async () => {
 
     // ── Year 2: Collaboration, Voice, Model Router, Security Scanner ────
     try {
-      priorityQueue.init?.()
-      sharedWorkspace.init?.()
-      pipeline.init?.()
-      voiceEngine.init?.()
-      modelRouter.init?.()
-      securityScanner.init?.()
+      priorityQueue.init()
+      sharedWorkspace.init()
+      pipeline.init()
+      voiceEngine.init()
+      modelRouter.init()
+      securityScanner.init()
       console.log('[Main] Year 2 services initialized (collaboration, voice-engine, model-router, security-scanner)')
     } catch (err) {
       console.warn('[Main] Year 2 services init error (non-fatal):', err)
@@ -450,12 +450,12 @@ app.whenReady().then(async () => {
 
     // ── Year 3: Enterprise — SSO/RBAC, Policy, Admin, Vertical Agents ──
     try {
-      rbacManager.init?.()
-      ssoProvider.init?.()
-      teamManager.init?.()
-      policyEngine.init?.()
-      adminConsole.init?.()
-      verticalAgentManager.init?.()
+      rbacManager.init()
+      ssoProvider.init()
+      teamManager.init()
+      policyEngine.init()
+      adminConsole.init()
+      verticalAgentManager.init()
       console.log('[Main] Year 3 services initialized (sso-rbac, policy-engine, admin-console, vertical-agents)')
     } catch (err) {
       console.warn('[Main] Year 3 services init error (non-fatal):', err)
@@ -463,11 +463,11 @@ app.whenReady().then(async () => {
 
     // ── Year 4: Platform — Self-improving, Cross-org, Mobile ──────────
     try {
-      proceduralMemory.init?.()
-      feedbackLoop.init?.()
-      crossOrgProtocol.init?.()
-      agentMarketplace.init?.()
-      mobileBridge.init?.()
+      proceduralMemory.init()
+      feedbackLoop.init()
+      crossOrgProtocol.init()
+      agentMarketplace.init()
+      mobileBridge.init()
       console.log('[Main] Year 4 services initialized (self-improving, cross-org-protocol, mobile-bridge)')
     } catch (err) {
       console.warn('[Main] Year 4 services init error (non-fatal):', err)
@@ -475,9 +475,9 @@ app.whenReady().then(async () => {
 
     // ── Year 5: OS Integration — Overlay, i18n, Agent Network ─────────
     try {
-      systemOverlay.init?.()
-      i18n.init?.()
-      agentNetwork.init?.()
+      systemOverlay.init()
+      i18n.init()
+      agentNetwork.init()
       console.log('[Main] Year 5 services initialized (system-overlay, i18n, agent-network)')
     } catch (err) {
       console.warn('[Main] Year 5 services init error (non-fatal):', err)
@@ -538,8 +538,35 @@ app.on('before-quit', async () => {
 
   // Shutdown Year 1-5 services
   try {
-    pluginSandbox.shutdown?.()
-    telemetryService.shutdown?.()
+    // Year 1
+    channelRouter.shutdown()
+    pluginSandbox.shutdown()
+    nyraGuard.shutdown()
+    telemetryService.shutdown()
+    // Year 2
+    priorityQueue.shutdown()
+    sharedWorkspace.shutdown()
+    pipeline.shutdown()
+    voiceEngine.shutdown()
+    modelRouter.shutdown()
+    securityScanner.shutdown()
+    // Year 3
+    rbacManager.shutdown()
+    ssoProvider.shutdown()
+    teamManager.shutdown()
+    policyEngine.shutdown()
+    adminConsole.shutdown()
+    verticalAgentManager.shutdown()
+    // Year 4
+    proceduralMemory.shutdown()
+    feedbackLoop.shutdown()
+    crossOrgProtocol.shutdown()
+    agentMarketplace.shutdown()
+    mobileBridge.shutdown()
+    // Year 5
+    systemOverlay.shutdown()
+    i18n.shutdown()
+    agentNetwork.shutdown()
   } catch (err) {
     console.warn('[Main] Year 1-5 services shutdown error (non-fatal):', err)
   }

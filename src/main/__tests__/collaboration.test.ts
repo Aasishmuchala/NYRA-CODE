@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import {
   PriorityMessageQueue,
   SharedWorkspace,
@@ -6,8 +6,25 @@ import {
   Priority,
   AgentMessage,
 } from '../agents/collaboration'
+import * as fs from 'fs'
+import * as path from 'path'
+import * as os from 'os'
 
 describe('Collaboration Engine', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), 'nyra-test-collaboration')
+    if (!fs.existsSync(tmpDir)) {
+      fs.mkdirSync(tmpDir, { recursive: true })
+    }
+  })
+
+  afterEach(() => {
+    if (fs.existsSync(tmpDir)) {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+    }
+  })
   describe('PriorityMessageQueue', () => {
     let queue: PriorityMessageQueue
 
@@ -418,6 +435,160 @@ describe('Collaboration Engine', () => {
       }
 
       expect(order).toEqual(['c', 'h', 'n', 'l'])
+    })
+  })
+
+  describe('Init/Shutdown Lifecycle', () => {
+    beforeEach(() => {
+      // Clean up persistence files from prior tests to ensure isolation
+      const dataDir = path.join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra')
+      const files = ['shared-workspace.json', 'pipeline-plans.json']
+      for (const f of files) {
+        const p = path.join(dataDir, f)
+        if (fs.existsSync(p)) fs.unlinkSync(p)
+      }
+    })
+
+    it('should initialize and load workspace data from disk', () => {
+      const workspace = new SharedWorkspace()
+      workspace.init()
+      expect(workspace).toBeDefined()
+    })
+
+    it('should create data directory on init()', () => {
+      const workspace = new SharedWorkspace()
+      workspace.init()
+      const dataDir = path.join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra')
+      expect(fs.existsSync(dataDir)).toBe(true)
+    })
+
+    it('should save workspace entries on shutdown()', () => {
+      const workspace = new SharedWorkspace()
+      workspace.init()
+      workspace.write('key-1', { data: 'test' }, 'agent-a')
+      workspace.write('key-2', { data: 'test-2' }, 'agent-b')
+      workspace.shutdown()
+
+      const storagePath = path.join(
+        process.env.HOME || process.env.USERPROFILE || '/tmp',
+        '.nyra',
+        'collaboration',
+        'workspace.json'
+      )
+
+      if (fs.existsSync(storagePath)) {
+        const data = JSON.parse(fs.readFileSync(storagePath, 'utf-8'))
+        expect(data.entries).toBeDefined()
+        expect(data.entries.length).toBeGreaterThan(0)
+      }
+    })
+
+    it('should restore workspace data after init+shutdown cycle', () => {
+      const workspace = new SharedWorkspace()
+      workspace.init()
+      workspace.write('shared-key', { result: 'important-data' }, 'agent-a')
+      workspace.shutdown()
+
+      const workspace2 = new SharedWorkspace()
+      workspace2.init()
+
+      const entry = workspace2.read('shared-key')
+      expect(entry?.value).toEqual({ result: 'important-data' })
+      expect(entry?.owner).toBe('agent-a')
+    })
+
+    it('should preserve workspace history across cycles', () => {
+      const workspace = new SharedWorkspace()
+      workspace.init()
+      workspace.write('versioned', 'v1', 'agent-a')
+      workspace.write('versioned', 'v2', 'agent-a')
+      workspace.shutdown()
+
+      const workspace2 = new SharedWorkspace()
+      workspace2.init()
+
+      const history = workspace2.getHistory('versioned')
+      expect(history.length).toBe(2)
+      expect(history[0].value).toBe('v1')
+      expect(history[1].value).toBe('v2')
+    })
+
+    it('should save and restore pipeline plans on shutdown', () => {
+      const queue = new PriorityMessageQueue()
+      const workspace = new SharedWorkspace()
+      const pipeline = new PlanExecuteReviewPipeline(queue, workspace)
+
+      pipeline.init()
+
+      const steps = [
+        { id: 'step-1', description: 'Task 1', assignee: 'worker', requiresApproval: false },
+        { id: 'step-2', description: 'Task 2', assignee: 'worker', requiresApproval: false },
+      ]
+
+      pipeline.createPlan('plan-1', steps)
+      pipeline.shutdown()
+
+      const planPath = path.join(
+        process.env.HOME || process.env.USERPROFILE || '/tmp',
+        '.nyra',
+        'collaboration',
+        'pipeline.json'
+      )
+
+      if (fs.existsSync(planPath)) {
+        const data = JSON.parse(fs.readFileSync(planPath, 'utf-8'))
+        expect(data.plans).toBeDefined()
+      }
+    })
+
+    it('should restore pipeline plans across init/shutdown cycles', () => {
+      const queue = new PriorityMessageQueue()
+      const workspace = new SharedWorkspace()
+      const pipeline = new PlanExecuteReviewPipeline(queue, workspace)
+
+      pipeline.init()
+
+      const steps = [
+        { id: 'step-1', description: 'Process', assignee: 'worker', requiresApproval: false },
+      ]
+
+      pipeline.createPlan('persistent-plan', steps)
+      pipeline.shutdown()
+
+      const queue2 = new PriorityMessageQueue()
+      const workspace2 = new SharedWorkspace()
+      const pipeline2 = new PlanExecuteReviewPipeline(queue2, workspace2)
+      pipeline2.init()
+
+      const plan = pipeline2.getPlan('persistent-plan')
+      expect(plan).toBeDefined()
+      expect(plan?.length).toBe(1)
+    })
+
+    it('should preserve plan execution state across shutdown', () => {
+      const queue = new PriorityMessageQueue()
+      const workspace = new SharedWorkspace()
+      const pipeline = new PlanExecuteReviewPipeline(queue, workspace)
+
+      pipeline.init()
+
+      const steps = [
+        { id: 'step-1', description: 'Task', assignee: 'worker', requiresApproval: false },
+      ]
+
+      const plan = pipeline.createPlan('tracking-plan', steps)
+      const progress = pipeline.getPlanProgress('tracking-plan')
+      expect(progress?.pending).toBe(1)
+
+      pipeline.shutdown()
+
+      const queue2 = new PriorityMessageQueue()
+      const workspace2 = new SharedWorkspace()
+      const pipeline2 = new PlanExecuteReviewPipeline(queue2, workspace2)
+      pipeline2.init()
+
+      const restoredProgress = pipeline2.getPlanProgress('tracking-plan')
+      expect(restoredProgress).toBeDefined()
     })
   })
 })

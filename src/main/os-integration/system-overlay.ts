@@ -1,4 +1,7 @@
 import { EventEmitter } from 'events';
+import { globalShortcut, BrowserWindow } from 'electron';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
 
 interface WindowInfo {
   app: string;
@@ -69,9 +72,65 @@ class SystemOverlay extends EventEmitter {
   private registeredHotkeys: Map<HotkeyCombo, () => void> = new Map();
   private lastActiveWindow: WindowInfo | null = null;
   private contextCache: Map<string, CapturedContext> = new Map();
+  private dataDir: string = '';
+  private electronHotkeys: Set<HotkeyCombo> = new Set();
 
   constructor() {
     super();
+  }
+
+  /**
+   * Initialize SystemOverlay and load persisted configuration
+   */
+  init(): void {
+    this.dataDir = join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra', 'os-integration');
+
+    // Create directory if it doesn't exist
+    if (!existsSync(this.dataDir)) {
+      mkdirSync(this.dataDir, { recursive: true });
+    }
+
+    // Load overlay config from disk
+    const configPath = join(this.dataDir, 'overlay-config.json');
+    if (existsSync(configPath)) {
+      try {
+        const data = JSON.parse(readFileSync(configPath, 'utf-8')) as {
+          isActive?: boolean;
+          currentMode?: ContextMode;
+          registeredHotkeys?: string[];
+        };
+        this.isActive = data.isActive || false;
+        this.currentMode = data.currentMode || 'floating';
+        // Note: we don't restore registered hotkeys from storage, they need to be re-registered
+      } catch (error) {
+        console.error('Failed to load overlay config:', error);
+      }
+    }
+  }
+
+  /**
+   * Shutdown SystemOverlay and persist configuration to disk
+   */
+  shutdown(): void {
+    if (!this.dataDir) return;
+
+    // Unregister all hotkeys
+    this.electronHotkeys.forEach((combo) => {
+      globalShortcut.unregister(combo);
+    });
+    this.electronHotkeys.clear();
+
+    try {
+      const configPath = join(this.dataDir, 'overlay-config.json');
+      const data = {
+        isActive: this.isActive,
+        currentMode: this.currentMode,
+        registeredHotkeys: Array.from(this.electronHotkeys),
+      };
+      writeFileSync(configPath, JSON.stringify(data, null, 2), 'utf-8');
+    } catch (error) {
+      console.error('Failed to save overlay config:', error);
+    }
   }
 
   /**
@@ -89,14 +148,19 @@ class SystemOverlay extends EventEmitter {
   deactivate(): void {
     if (!this.isActive) return;
     this.isActive = false;
-    this.registeredHotkeys.forEach((callback, combo) => {
-      this.unregisterHotkey(combo);
+
+    // Unregister all hotkeys
+    this.electronHotkeys.forEach((combo) => {
+      globalShortcut.unregister(combo);
     });
+    this.electronHotkeys.clear();
+    globalShortcut.unregisterAll();
+
     this.emit('deactivated', { timestamp: Date.now() });
   }
 
   /**
-   * Register a global hotkey combination
+   * Register a global hotkey combination using Electron's globalShortcut
    * Example: 'Ctrl+Space', 'Cmd+Shift+K'
    */
   registerHotkey(combo: string, callback?: () => void): void {
@@ -114,7 +178,20 @@ class SystemOverlay extends EventEmitter {
     const handler = callback || defaultCallback;
 
     this.registeredHotkeys.set(combo, handler);
-    this.emit('hotkey-registered', { combo, timestamp: Date.now() });
+
+    try {
+      const ret = globalShortcut.register(combo, handler);
+      if (ret) {
+        this.electronHotkeys.add(combo);
+        this.emit('hotkey-registered', { combo, timestamp: Date.now() });
+      } else {
+        console.warn(`Failed to register hotkey: ${combo}`);
+        this.emit('hotkey-registration-failed', { combo, timestamp: Date.now() });
+      }
+    } catch (error) {
+      console.error(`Error registering hotkey ${combo}:`, error);
+      this.emit('hotkey-registration-failed', { combo, error, timestamp: Date.now() });
+    }
   }
 
   /**
@@ -123,15 +200,30 @@ class SystemOverlay extends EventEmitter {
   unregisterHotkey(combo: string): void {
     if (this.registeredHotkeys.has(combo)) {
       this.registeredHotkeys.delete(combo);
+      globalShortcut.unregister(combo);
+      this.electronHotkeys.delete(combo);
       this.emit('hotkey-unregistered', { combo, timestamp: Date.now() });
     }
   }
 
   /**
-   * Get information about the currently focused window
+   * Get information about the currently focused window using Electron
    */
   getActiveWindow(): WindowInfo {
-    // Simulated: In production, this would use OS-level APIs
+    try {
+      const focusedWindow = BrowserWindow.getFocusedWindow();
+      if (focusedWindow) {
+        const title = focusedWindow.getTitle();
+        return {
+          app: focusedWindow.webContents.getURL(),
+          title: title,
+          pid: process.pid
+        };
+      }
+    } catch (error) {
+      console.error('Error getting focused window:', error);
+    }
+
     return this.lastActiveWindow || {
       app: 'Unknown',
       title: 'Untitled',

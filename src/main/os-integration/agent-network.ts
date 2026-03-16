@@ -1,5 +1,8 @@
 import { EventEmitter } from 'events';
 import { randomBytes } from 'crypto';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
+import { request as httpRequest } from 'http';
 
 interface Insight {
   id: string;
@@ -53,10 +56,85 @@ class AgentNetwork extends EventEmitter {
   private trendingTopics: Map<string, TrendingTopic> = new Map();
   private federatedModels: Map<string, FederatedModel> = new Map();
   private optInConsent: boolean = false;
+  private dataDir: string = '';
+  private hubUrl: string | null = null; // null = offline mode
 
   constructor() {
     super();
     this.anonymousId = this.generateAnonymousId();
+  }
+
+  /**
+   * Initialize AgentNetwork and load persisted data
+   */
+  init(): void {
+    this.dataDir = join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra', 'os-integration');
+
+    // Create directory if it doesn't exist
+    if (!existsSync(this.dataDir)) {
+      mkdirSync(this.dataDir, { recursive: true });
+    }
+
+    // Load agent network data from disk
+    const networkPath = join(this.dataDir, 'agent-network.json');
+    if (existsSync(networkPath)) {
+      try {
+        const data = JSON.parse(readFileSync(networkPath, 'utf-8')) as {
+          networkId?: string;
+          anonymousId?: string;
+          optInConsent?: boolean;
+          hubUrl?: string | null;
+          insights?: Record<string, Insight>;
+          taskApproaches?: Record<string, TaskApproach[]>;
+          federatedModels?: Record<string, FederatedModel>;
+        };
+        this.networkId = data.networkId || '';
+        this.anonymousId = data.anonymousId || this.generateAnonymousId();
+        this.optInConsent = data.optInConsent || false;
+        this.hubUrl = data.hubUrl || null;
+        if (data.insights) {
+          this.insights = new Map(Object.entries(data.insights));
+        }
+        if (data.taskApproaches) {
+          this.taskApproaches = new Map(Object.entries(data.taskApproaches));
+        }
+        if (data.federatedModels) {
+          this.federatedModels = new Map(Object.entries(data.federatedModels));
+        }
+      } catch (error) {
+        console.error('Failed to load agent network data:', error);
+      }
+    }
+  }
+
+  /**
+   * Shutdown AgentNetwork and persist data to disk
+   */
+  shutdown(): void {
+    if (!this.dataDir) return;
+
+    try {
+      const networkPath = join(this.dataDir, 'agent-network.json');
+      const data = {
+        networkId: this.networkId,
+        anonymousId: this.anonymousId,
+        optInConsent: this.optInConsent,
+        hubUrl: this.hubUrl,
+        insights: Object.fromEntries(this.insights),
+        taskApproaches: Object.fromEntries(this.taskApproaches),
+        federatedModels: Object.fromEntries(this.federatedModels),
+      };
+      writeFileSync(networkPath, JSON.stringify(data, null, 2), 'utf-8');
+    } catch (error) {
+      console.error('Failed to save agent network data:', error);
+    }
+  }
+
+  /**
+   * Set the hub URL for network connectivity (null = offline mode)
+   */
+  setHubUrl(url: string | null): void {
+    this.hubUrl = url;
   }
 
   /**
@@ -113,7 +191,7 @@ class AgentNetwork extends EventEmitter {
   }
 
   /**
-   * Share a learned insight with the network
+   * Share a learned insight with the network (locally or via HTTP if hub available)
    */
   shareInsight(topic: string, insight: string, confidence: number): string {
     if (!this.isConnected || !this.optInConsent) {
@@ -135,7 +213,13 @@ class AgentNetwork extends EventEmitter {
       timestamp: Date.now()
     };
 
+    // Store locally
     this.insights.set(insightId, insightObj);
+
+    // Try to share to hub if connected
+    if (this.hubUrl) {
+      this.postToHub('/insights', insightObj);
+    }
 
     this.emit('insight-shared', {
       insightId,
@@ -148,13 +232,20 @@ class AgentNetwork extends EventEmitter {
   }
 
   /**
-   * Query community insights on a topic
+   * Query community insights on a topic (local cache or from hub if available)
    */
   queryInsights(topic: string, minConfidence: number = 0.5): Insight[] {
-    return Array.from(this.insights.values())
+    let results = Array.from(this.insights.values())
       .filter(i => i.topic === topic && i.confidence >= minConfidence)
       .sort((a, b) => b.votes - a.votes)
       .slice(0, 20);
+
+    // If hub is available, try to fetch additional insights from network
+    if (this.hubUrl) {
+      this.getFromHub(`/insights?topic=${encodeURIComponent(topic)}&minConfidence=${minConfidence}`);
+    }
+
+    return results;
   }
 
   /**
@@ -354,6 +445,99 @@ class AgentNetwork extends EventEmitter {
 
   private generateAnonymousId(): string {
     return `agent_${randomBytes(12).toString('hex')}`;
+  }
+
+  /**
+   * POST data to hub via HTTP
+   */
+  private postToHub(endpoint: string, data: unknown): void {
+    if (!this.hubUrl) return;
+
+    const postData = JSON.stringify(data);
+    const url = new URL(endpoint, this.hubUrl);
+
+    const requestOptions = {
+      hostname: url.hostname,
+      port: url.port || 80,
+      path: url.pathname + url.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+        'X-Anonymous-Id': this.anonymousId,
+      },
+    };
+
+    const req = httpRequest(requestOptions, (res) => {
+      let responseData = '';
+      res.on('data', (chunk) => {
+        responseData += chunk;
+      });
+
+      res.on('end', () => {
+        if (res.statusCode === 200 || res.statusCode === 201) {
+          this.emit('hub-post-success', { endpoint, statusCode: res.statusCode });
+        } else {
+          console.warn(`Hub POST failed with status ${res.statusCode}`);
+        }
+      });
+    });
+
+    req.on('error', (error) => {
+      console.warn(`Failed to POST to hub: ${error.message}`);
+    });
+
+    req.write(postData);
+    req.end();
+  }
+
+  /**
+   * GET data from hub via HTTP
+   */
+  private getFromHub(endpoint: string): void {
+    if (!this.hubUrl) return;
+
+    const url = new URL(endpoint, this.hubUrl);
+    const requestOptions = {
+      hostname: url.hostname,
+      port: url.port || 80,
+      path: url.pathname + url.search,
+      method: 'GET',
+      headers: {
+        'X-Anonymous-Id': this.anonymousId,
+      },
+    };
+
+    const req = httpRequest(requestOptions, (res) => {
+      let responseData = '';
+      res.on('data', (chunk) => {
+        responseData += chunk;
+      });
+
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          try {
+            const hubInsights = JSON.parse(responseData) as Insight[];
+            hubInsights.forEach((insight) => {
+              if (!this.insights.has(insight.id)) {
+                this.insights.set(insight.id, insight);
+              }
+            });
+            this.emit('hub-get-success', { endpoint, count: hubInsights.length });
+          } catch (error) {
+            console.warn('Failed to parse hub response:', error);
+          }
+        } else {
+          console.warn(`Hub GET failed with status ${res.statusCode}`);
+        }
+      });
+    });
+
+    req.on('error', (error) => {
+      console.warn(`Failed to GET from hub: ${error.message}`);
+    });
+
+    req.end();
   }
 }
 

@@ -1468,134 +1468,250 @@ const nyraApi = {
     init:                   (): Promise<any>                      => ipcRenderer.invoke('channelRouter:init'),
     routeMessage:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('channelRouter:routeMessage', ...args),
     getActiveSessions:      (): Promise<any>                      => ipcRenderer.invoke('channelRouter:getActiveSessions'),
-    clearStale:             (): Promise<any>                      => ipcRenderer.invoke('channelRouter:clearStale'),
+    clearStale:             (...args: any[]): Promise<any>        => ipcRenderer.invoke('channelRouter:clearStale', ...args),
+    shutdown:               (): Promise<any>                      => ipcRenderer.invoke('channelRouter:shutdown'),
   },
 
   // ── Year 1: Plugin Sandbox ──────────────────────────────────────────────────
   pluginSandbox: {
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('pluginSandbox:init'),
     createSandbox:          (...args: any[]): Promise<any>        => ipcRenderer.invoke('pluginSandbox:createSandbox', ...args),
-    destroySandbox:         (...args: any[]): Promise<any>        => ipcRenderer.invoke('pluginSandbox:destroySandbox', ...args),
+    execute:                (...args: any[]): Promise<any>        => ipcRenderer.invoke('pluginSandbox:execute', ...args),
+    destroy:                (...args: any[]): Promise<any>        => ipcRenderer.invoke('pluginSandbox:destroy', ...args),
+    getAuditLog:            (...args: any[]): Promise<any>        => ipcRenderer.invoke('pluginSandbox:getAuditLog', ...args),
     listSandboxes:          (): Promise<any>                      => ipcRenderer.invoke('pluginSandbox:listSandboxes'),
-    getSandboxStats:        (...args: any[]): Promise<any>        => ipcRenderer.invoke('pluginSandbox:getSandboxStats', ...args),
+    getSandboxInfo:         (...args: any[]): Promise<any>        => ipcRenderer.invoke('pluginSandbox:getSandboxInfo', ...args),
+    shutdown:               (): Promise<any>                      => ipcRenderer.invoke('pluginSandbox:shutdown'),
   },
 
   // ── Year 1: NyraGuard ──────────────────────────────────────────────────────
   nyraGuard: {
-    scan:                   (...args: any[]): Promise<any>        => ipcRenderer.invoke('nyraGuard:scan', ...args),
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('nyraGuard:init'),
     scanPlugin:             (...args: any[]): Promise<any>        => ipcRenderer.invoke('nyraGuard:scanPlugin', ...args),
-    getResults:             (): Promise<any>                      => ipcRenderer.invoke('nyraGuard:getResults'),
+    scanCode:               (...args: any[]): Promise<any>        => ipcRenderer.invoke('nyraGuard:scanCode', ...args),
+    scanDependencies:       (...args: any[]): Promise<any>        => ipcRenderer.invoke('nyraGuard:scanDependencies', ...args),
     generateReport:         (...args: any[]): Promise<any>        => ipcRenderer.invoke('nyraGuard:generateReport', ...args),
+    shutdown:               (): Promise<any>                      => ipcRenderer.invoke('nyraGuard:shutdown'),
   },
 
-  // ── Year 1: Telemetry ──────────────────────────────────────────────────────
-  telemetry: {
-    init:                   (): Promise<any>                      => ipcRenderer.invoke('telemetry:init'),
-    track:                  (...args: any[]): Promise<any>        => ipcRenderer.invoke('telemetry:track', ...args),
-    getStats:               (): Promise<any>                      => ipcRenderer.invoke('telemetry:getStats'),
-    setOptIn:               (...args: any[]): Promise<any>        => ipcRenderer.invoke('telemetry:setOptIn', ...args),
+  // ── Year 1: Telemetry Service ───────────────────────────────────────────────
+  telemetryService: {
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('telemetryService:init'),
+    track:                  (...args: any[]): Promise<any>        => ipcRenderer.invoke('telemetryService:track', ...args),
+    getStats:               (): Promise<any>                      => ipcRenderer.invoke('telemetryService:getStats'),
+    setOptIn:               (...args: any[]): Promise<any>        => ipcRenderer.invoke('telemetryService:setOptIn', ...args),
+    shutdown:               (): Promise<any>                      => ipcRenderer.invoke('telemetryService:shutdown'),
+  },
+
+  // ── Year 2: Security Scanner ───────────────────────────────────────────────
+  securityScanner: {
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('securityScanner:init'),
+    scanPlugin:             (...args: any[]): Promise<any>        => ipcRenderer.invoke('securityScanner:scanPlugin', ...args),
+    scanCode:               (...args: any[]): Promise<any>        => ipcRenderer.invoke('securityScanner:scanCode', ...args),
+    shutdown:               (): Promise<any>                      => ipcRenderer.invoke('securityScanner:shutdown'),
   },
 
   // ── Year 2: Collaboration ──────────────────────────────────────────────────
   priorityQueue: {
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('priorityQueue:init'),
     enqueue:                (...args: any[]): Promise<any>        => ipcRenderer.invoke('priorityQueue:enqueue', ...args),
+    dequeue:                (...args: any[]): Promise<any>        => ipcRenderer.invoke('priorityQueue:dequeue', ...args),
+    peek:                   (...args: any[]): Promise<any>        => ipcRenderer.invoke('priorityQueue:peek', ...args),
+    getTotalPending:        (): Promise<any>                      => ipcRenderer.invoke('priorityQueue:getTotalPending'),
+    shutdown:               (): Promise<any>                      => ipcRenderer.invoke('priorityQueue:shutdown'),
   },
 
   sharedWorkspace: {
-    addEntry:               (...args: any[]): Promise<any>        => ipcRenderer.invoke('sharedWorkspace:addEntry', ...args),
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('sharedWorkspace:init'),
+    read:                   (...args: any[]): Promise<any>        => ipcRenderer.invoke('sharedWorkspace:read', ...args),
+    write:                  (...args: any[]): Promise<any>        => ipcRenderer.invoke('sharedWorkspace:write', ...args),
+    cas:                    (...args: any[]): Promise<any>        => ipcRenderer.invoke('sharedWorkspace:cas', ...args),
+    list:                   (): Promise<any>                      => ipcRenderer.invoke('sharedWorkspace:list'),
+    getHistory:             (...args: any[]): Promise<any>        => ipcRenderer.invoke('sharedWorkspace:getHistory', ...args),
+    clear:                  (): Promise<any>                      => ipcRenderer.invoke('sharedWorkspace:clear'),
+    shutdown:               (): Promise<any>                      => ipcRenderer.invoke('sharedWorkspace:shutdown'),
   },
 
   pipeline: {
-    execute:                (...args: any[]): Promise<any>        => ipcRenderer.invoke('pipeline:execute', ...args),
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('pipeline:init'),
+    createPlan:             (...args: any[]): Promise<any>        => ipcRenderer.invoke('pipeline:createPlan', ...args),
+    executeStep:            (...args: any[]): Promise<any>        => ipcRenderer.invoke('pipeline:executeStep', ...args),
+    submitResult:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('pipeline:submitResult', ...args),
+    approveStep:            (...args: any[]): Promise<any>        => ipcRenderer.invoke('pipeline:approveStep', ...args),
+    rejectStep:             (...args: any[]): Promise<any>        => ipcRenderer.invoke('pipeline:rejectStep', ...args),
+    getPlan:                (...args: any[]): Promise<any>        => ipcRenderer.invoke('pipeline:getPlan', ...args),
+    getPlanProgress:        (...args: any[]): Promise<any>        => ipcRenderer.invoke('pipeline:getPlanProgress', ...args),
+    shutdown:               (): Promise<any>                      => ipcRenderer.invoke('pipeline:shutdown'),
   },
 
   // ── Year 2: Voice Engine ───────────────────────────────────────────────────
   voiceEngine: {
     init:                   (): Promise<any>                      => ipcRenderer.invoke('voiceEngine:init'),
+    initialize:             (): Promise<any>                      => ipcRenderer.invoke('voiceEngine:initialize'),
     startRecording:         (): Promise<any>                      => ipcRenderer.invoke('voiceEngine:startRecording'),
     stopRecording:          (): Promise<any>                      => ipcRenderer.invoke('voiceEngine:stopRecording'),
+    transcribe:             (...args: any[]): Promise<any>        => ipcRenderer.invoke('voiceEngine:transcribe', ...args),
     speak:                  (...args: any[]): Promise<any>        => ipcRenderer.invoke('voiceEngine:speak', ...args),
     getConfig:              (): Promise<any>                      => ipcRenderer.invoke('voiceEngine:getConfig'),
-    setConfig:              (...args: any[]): Promise<any>        => ipcRenderer.invoke('voiceEngine:setConfig', ...args),
+    updateConfig:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('voiceEngine:updateConfig', ...args),
+    shutdown:               (): Promise<any>                      => ipcRenderer.invoke('voiceEngine:shutdown'),
   },
 
   // ── Year 2: Model Router (merged into existing modelRouter above) ─────────
 
-  // ── Year 2: Security Scanner ───────────────────────────────────────────────
-  securityScanner: {
-    scanPlugin:             (...args: any[]): Promise<any>        => ipcRenderer.invoke('securityScanner:scanPlugin', ...args),
-    getResults:             (): Promise<any>                      => ipcRenderer.invoke('securityScanner:getResults'),
+  // ── Year 3: SSO/RBAC ───────────────────────────────────────────────────────
+  ssoProvider: {
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('ssoProvider:init'),
+    initiateSsoLogin:       (...args: any[]): Promise<any>        => ipcRenderer.invoke('ssoProvider:initiateSsoLogin', ...args),
+    handleCallback:         (...args: any[]): Promise<any>        => ipcRenderer.invoke('ssoProvider:handleCallback', ...args),
+    validateToken:          (...args: any[]): Promise<any>        => ipcRenderer.invoke('ssoProvider:validateToken', ...args),
+    refreshToken:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('ssoProvider:refreshToken', ...args),
   },
 
-  // ── Year 3: SSO/RBAC ───────────────────────────────────────────────────────
   rbacManager: {
     init:                   (): Promise<any>                      => ipcRenderer.invoke('rbacManager:init'),
-  },
-
-  ssoProvider: {
-    authenticate:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('ssoProvider:authenticate', ...args),
+    assignRole:             (...args: any[]): Promise<any>        => ipcRenderer.invoke('rbacManager:assignRole', ...args),
+    removeRole:             (...args: any[]): Promise<any>        => ipcRenderer.invoke('rbacManager:removeRole', ...args),
+    getUserRoles:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('rbacManager:getUserRoles', ...args),
+    checkPermission:        (...args: any[]): Promise<any>        => ipcRenderer.invoke('rbacManager:checkPermission', ...args),
   },
 
   teamManager: {
-    addTeam:                (...args: any[]): Promise<any>        => ipcRenderer.invoke('teamManager:addTeam', ...args),
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('teamManager:init'),
+    createTeam:             (...args: any[]): Promise<any>        => ipcRenderer.invoke('teamManager:createTeam', ...args),
+    inviteMember:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('teamManager:inviteMember', ...args),
+    removeMember:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('teamManager:removeMember', ...args),
+    listMembers:            (...args: any[]): Promise<any>        => ipcRenderer.invoke('teamManager:listMembers', ...args),
+    updateMemberRole:       (...args: any[]): Promise<any>        => ipcRenderer.invoke('teamManager:updateMemberRole', ...args),
   },
 
   // ── Year 3: Policy Engine ──────────────────────────────────────────────────
   policyEngine: {
     init:                   (): Promise<any>                      => ipcRenderer.invoke('policyEngine:init'),
-    evaluatePolicy:         (...args: any[]): Promise<any>        => ipcRenderer.invoke('policyEngine:evaluatePolicy', ...args),
+    createPolicy:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('policyEngine:createPolicy', ...args),
+    evaluateRequest:        (...args: any[]): Promise<any>        => ipcRenderer.invoke('policyEngine:evaluateRequest', ...args),
+    getPolicies:            (...args: any[]): Promise<any>        => ipcRenderer.invoke('policyEngine:getPolicies', ...args),
+    updatePolicy:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('policyEngine:updatePolicy', ...args),
+    disablePolicy:          (...args: any[]): Promise<any>        => ipcRenderer.invoke('policyEngine:disablePolicy', ...args),
+    getAuditLog:            (...args: any[]): Promise<any>        => ipcRenderer.invoke('policyEngine:getAuditLog', ...args),
   },
 
   // ── Year 3: Admin Console ──────────────────────────────────────────────────
   adminConsole: {
     init:                   (): Promise<any>                      => ipcRenderer.invoke('adminConsole:init'),
-    getDashboard:           (): Promise<any>                      => ipcRenderer.invoke('adminConsole:getDashboard'),
+    getDashboard:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('adminConsole:getDashboard', ...args),
+    listUsers:              (...args: any[]): Promise<any>        => ipcRenderer.invoke('adminConsole:listUsers', ...args),
+    activateUser:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('adminConsole:activateUser', ...args),
+    suspendUser:            (...args: any[]): Promise<any>        => ipcRenderer.invoke('adminConsole:suspendUser', ...args),
+    getBillingOverview:     (...args: any[]): Promise<any>        => ipcRenderer.invoke('adminConsole:getBillingOverview', ...args),
+    setSpendingLimit:       (...args: any[]): Promise<any>        => ipcRenderer.invoke('adminConsole:setSpendingLimit', ...args),
+    generateComplianceReport: (...args: any[]): Promise<any>      => ipcRenderer.invoke('adminConsole:generateComplianceReport', ...args),
+    getAuditLog:            (...args: any[]): Promise<any>        => ipcRenderer.invoke('adminConsole:getAuditLog', ...args),
   },
 
   // ── Year 3: Vertical Agents ────────────────────────────────────────────────
   verticalAgentManager: {
     init:                   (): Promise<any>                      => ipcRenderer.invoke('verticalAgentManager:init'),
     registerPack:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('verticalAgentManager:registerPack', ...args),
+    listPacks:              (): Promise<any>                      => ipcRenderer.invoke('verticalAgentManager:listPacks'),
+    getPack:                (...args: any[]): Promise<any>        => ipcRenderer.invoke('verticalAgentManager:getPack', ...args),
     activatePack:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('verticalAgentManager:activatePack', ...args),
+    deactivatePack:         (...args: any[]): Promise<any>        => ipcRenderer.invoke('verticalAgentManager:deactivatePack', ...args),
+    getActivePacksForTeam:  (...args: any[]): Promise<any>        => ipcRenderer.invoke('verticalAgentManager:getActivePacksForTeam', ...args),
   },
 
   // ── Year 4: Procedural Memory ──────────────────────────────────────────────
   proceduralMemory: {
     init:                   (): Promise<any>                      => ipcRenderer.invoke('proceduralMemory:init'),
-    learnFromExperience:    (...args: any[]): Promise<any>        => ipcRenderer.invoke('proceduralMemory:learnFromExperience', ...args),
+    learn:                  (...args: any[]): Promise<any>        => ipcRenderer.invoke('proceduralMemory:learn', ...args),
+    recall:                 (...args: any[]): Promise<any>        => ipcRenderer.invoke('proceduralMemory:recall', ...args),
+    reinforce:              (...args: any[]): Promise<any>        => ipcRenderer.invoke('proceduralMemory:reinforce', ...args),
+    getProcedures:          (): Promise<any>                      => ipcRenderer.invoke('proceduralMemory:getProcedures'),
+  },
+
+  // ── Year 4: Feedback Loop ───────────────────────────────────────────────────
+  feedbackLoop: {
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('feedbackLoop:init'),
+    recordOutcome:          (...args: any[]): Promise<any>        => ipcRenderer.invoke('feedbackLoop:recordOutcome', ...args),
+    getAgentScore:          (...args: any[]): Promise<any>        => ipcRenderer.invoke('feedbackLoop:getAgentScore', ...args),
+    getHistory:             (...args: any[]): Promise<any>        => ipcRenderer.invoke('feedbackLoop:getHistory', ...args),
   },
 
   // ── Year 4: Cross-org Protocol ─────────────────────────────────────────────
   crossOrgProtocol: {
     init:                   (): Promise<any>                      => ipcRenderer.invoke('crossOrgProtocol:init'),
-    shareAgent:             (...args: any[]): Promise<any>        => ipcRenderer.invoke('crossOrgProtocol:shareAgent', ...args),
+    startServer:            (...args: any[]): Promise<any>        => ipcRenderer.invoke('crossOrgProtocol:startServer', ...args),
+    register:               (...args: any[]): Promise<any>        => ipcRenderer.invoke('crossOrgProtocol:register', ...args),
+    discover:               (...args: any[]): Promise<any>        => ipcRenderer.invoke('crossOrgProtocol:discover', ...args),
+    sendMessage:            (...args: any[]): Promise<any>        => ipcRenderer.invoke('crossOrgProtocol:sendMessage', ...args),
+    getQueueStatus:         (): Promise<any>                      => ipcRenderer.invoke('crossOrgProtocol:getQueueStatus'),
+  },
+
+  // ── Year 4: Agent Marketplace ───────────────────────────────────────────────
+  agentMarketplace: {
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('agentMarketplace:init'),
+    publishAgent:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('agentMarketplace:publishAgent', ...args),
+    searchAgents:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('agentMarketplace:searchAgents', ...args),
+    getAgent:               (...args: any[]): Promise<any>        => ipcRenderer.invoke('agentMarketplace:getAgent', ...args),
+    listAgents:             (): Promise<any>                      => ipcRenderer.invoke('agentMarketplace:listAgents'),
   },
 
   // ── Year 4: Mobile Bridge ──────────────────────────────────────────────────
   mobileBridge: {
     init:                   (): Promise<any>                      => ipcRenderer.invoke('mobileBridge:init'),
-    pairDevice:             (...args: any[]): Promise<any>        => ipcRenderer.invoke('mobileBridge:pairDevice', ...args),
-    sync:                   (): Promise<any>                      => ipcRenderer.invoke('mobileBridge:sync'),
+    startLocalServer:       (): Promise<any>                      => ipcRenderer.invoke('mobileBridge:startLocalServer'),
+    stopLocalServer:        (): Promise<any>                      => ipcRenderer.invoke('mobileBridge:stopLocalServer'),
+    generatePairingCode:    (): Promise<any>                      => ipcRenderer.invoke('mobileBridge:generatePairingCode'),
+    confirmPairing:         (...args: any[]): Promise<any>        => ipcRenderer.invoke('mobileBridge:confirmPairing', ...args),
+    listDevices:            (): Promise<any>                      => ipcRenderer.invoke('mobileBridge:listDevices'),
+    removeDevice:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('mobileBridge:removeDevice', ...args),
+    syncConversations:      (...args: any[]): Promise<any>        => ipcRenderer.invoke('mobileBridge:syncConversations', ...args),
+    pushNotification:       (...args: any[]): Promise<any>        => ipcRenderer.invoke('mobileBridge:pushNotification', ...args),
   },
 
   // ── Year 5: System Overlay ─────────────────────────────────────────────────
   systemOverlay: {
     init:                   (): Promise<any>                      => ipcRenderer.invoke('systemOverlay:init'),
-    show:                   (...args: any[]): Promise<any>        => ipcRenderer.invoke('systemOverlay:show', ...args),
-    hide:                   (): Promise<any>                      => ipcRenderer.invoke('systemOverlay:hide'),
+    activate:               (): Promise<any>                      => ipcRenderer.invoke('systemOverlay:activate'),
+    deactivate:             (): Promise<any>                      => ipcRenderer.invoke('systemOverlay:deactivate'),
+    registerHotkey:         (...args: any[]): Promise<any>        => ipcRenderer.invoke('systemOverlay:registerHotkey', ...args),
+    unregisterHotkey:       (...args: any[]): Promise<any>        => ipcRenderer.invoke('systemOverlay:unregisterHotkey', ...args),
+    getMode:                (): Promise<any>                      => ipcRenderer.invoke('systemOverlay:getMode'),
+    setMode:                (...args: any[]): Promise<any>        => ipcRenderer.invoke('systemOverlay:setMode', ...args),
+    getAppProfile:          (...args: any[]): Promise<any>        => ipcRenderer.invoke('systemOverlay:getAppProfile', ...args),
+    captureContext:         (): Promise<any>                      => ipcRenderer.invoke('systemOverlay:captureContext'),
+    injectResponse:         (...args: any[]): Promise<any>        => ipcRenderer.invoke('systemOverlay:injectResponse', ...args),
+    getActiveWindow:        (): Promise<any>                      => ipcRenderer.invoke('systemOverlay:getActiveWindow'),
   },
 
   // ── Year 5: i18n ───────────────────────────────────────────────────────────
   i18n: {
     init:                   (): Promise<any>                      => ipcRenderer.invoke('i18n:init'),
-    translate:              (...args: any[]): Promise<any>        => ipcRenderer.invoke('i18n:translate', ...args),
-    getLocales:             (): Promise<any>                      => ipcRenderer.invoke('i18n:getLocales'),
+    t:                      (...args: any[]): Promise<any>        => ipcRenderer.invoke('i18n:t', ...args),
+    tp:                     (...args: any[]): Promise<any>        => ipcRenderer.invoke('i18n:tp', ...args),
+    setLocale:              (...args: any[]): Promise<any>        => ipcRenderer.invoke('i18n:setLocale', ...args),
+    getLocale:              (): Promise<any>                      => ipcRenderer.invoke('i18n:getLocale'),
+    getSupportedLocales:    (): Promise<any>                      => ipcRenderer.invoke('i18n:getSupportedLocales'),
+    formatNumber:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('i18n:formatNumber', ...args),
+    formatDate:             (...args: any[]): Promise<any>        => ipcRenderer.invoke('i18n:formatDate', ...args),
+    formatCurrency:         (...args: any[]): Promise<any>        => ipcRenderer.invoke('i18n:formatCurrency', ...args),
+    isRtl:                  (...args: any[]): Promise<any>        => ipcRenderer.invoke('i18n:isRtl', ...args),
+    loadTranslations:       (...args: any[]): Promise<any>        => ipcRenderer.invoke('i18n:loadTranslations', ...args),
+    getMissingKeys:         (...args: any[]): Promise<any>        => ipcRenderer.invoke('i18n:getMissingKeys', ...args),
   },
 
   // ── Year 5: Agent Network ──────────────────────────────────────────────────
   agentNetwork: {
     init:                   (): Promise<any>                      => ipcRenderer.invoke('agentNetwork:init'),
-    connectAgent:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('agentNetwork:connectAgent', ...args),
-    broadcastMessage:       (...args: any[]): Promise<any>        => ipcRenderer.invoke('agentNetwork:broadcastMessage', ...args),
+    join:                   (...args: any[]): Promise<any>        => ipcRenderer.invoke('agentNetwork:join', ...args),
+    leave:                  (): Promise<any>                      => ipcRenderer.invoke('agentNetwork:leave'),
+    shareInsight:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('agentNetwork:shareInsight', ...args),
+    queryInsights:          (...args: any[]): Promise<any>        => ipcRenderer.invoke('agentNetwork:queryInsights', ...args),
+    voteInsight:            (...args: any[]): Promise<any>        => ipcRenderer.invoke('agentNetwork:voteInsight', ...args),
+    reportTaskOutcome:      (...args: any[]): Promise<any>        => ipcRenderer.invoke('agentNetwork:reportTaskOutcome', ...args),
+    getBestApproach:        (...args: any[]): Promise<any>        => ipcRenderer.invoke('agentNetwork:getBestApproach', ...args),
+    getTrendingTopics:      (): Promise<any>                      => ipcRenderer.invoke('agentNetwork:getTrendingTopics'),
+    getNetworkStats:        (): Promise<any>                      => ipcRenderer.invoke('agentNetwork:getNetworkStats'),
   },
 }
 

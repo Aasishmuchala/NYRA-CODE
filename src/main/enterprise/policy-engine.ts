@@ -1,4 +1,22 @@
 import { randomBytes } from 'crypto';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+function getDataDir(): string {
+  const homeDir = process.env.HOME || process.env.USERPROFILE || '/tmp';
+  return join(homeDir, '.nyra', 'enterprise');
+}
+
+function ensureDataDir(): void {
+  const dir = getDataDir();
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+}
 
 // ============================================================================
 // Policy Types
@@ -89,6 +107,54 @@ class PolicyEngine {
   private auditLog: AuditEntry[] = [];
   private policyCounter = 0;
   private auditCounter = 0;
+
+  init(): void {
+    ensureDataDir();
+    try {
+      const policiesPath = join(getDataDir(), 'policies.json');
+      if (existsSync(policiesPath)) {
+        const data = JSON.parse(readFileSync(policiesPath, 'utf-8'));
+        if (data.policies && typeof data.policies === 'object') {
+          Object.entries(data.policies).forEach(([policyId, policy]) => {
+            const p = policy as Policy;
+            p.createdAt = new Date(p.createdAt);
+            p.updatedAt = new Date(p.updatedAt);
+            this.policies.set(policyId, p);
+          });
+        }
+        if (Array.isArray(data.auditLog)) {
+          this.auditLog = data.auditLog.map((entry: AuditEntry) => ({
+            ...entry,
+            timestamp: new Date(entry.timestamp),
+          }));
+        }
+        if (typeof data.policyCounter === 'number') {
+          this.policyCounter = data.policyCounter;
+        }
+        if (typeof data.auditCounter === 'number') {
+          this.auditCounter = data.auditCounter;
+        }
+      }
+    } catch (err) {
+      // Fail silently on corrupt file
+    }
+  }
+
+  shutdown(): void {
+    try {
+      const policiesPath = join(getDataDir(), 'policies.json');
+      ensureDataDir();
+      const data = {
+        policies: Object.fromEntries(this.policies),
+        auditLog: this.auditLog,
+        policyCounter: this.policyCounter,
+        auditCounter: this.auditCounter,
+      };
+      writeFileSync(policiesPath, JSON.stringify(data, null, 2));
+    } catch (err) {
+      // Fail silently on write error
+    }
+  }
 
   createPolicy(orgId: string, type: PolicyType, rules: PolicyRule): Policy {
     const policyId = `policy_${++this.policyCounter}_${Date.now()}`;
@@ -413,3 +479,6 @@ export {
   type EvaluationDecision,
   type AuditEntry,
 };
+
+// Initialize on module load
+policyEngine.init();

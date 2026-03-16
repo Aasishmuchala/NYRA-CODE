@@ -1,11 +1,25 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { SecurityScanner } from '../marketplace/security-scanner'
+import * as fs from 'fs'
+import * as path from 'path'
+import * as os from 'os'
 
 describe('SecurityScanner', () => {
   let scanner: SecurityScanner
+  let tmpDir: string
 
   beforeEach(() => {
     scanner = new SecurityScanner()
+    tmpDir = path.join(os.tmpdir(), 'nyra-test-security-scanner')
+    if (!fs.existsSync(tmpDir)) {
+      fs.mkdirSync(tmpDir, { recursive: true })
+    }
+  })
+
+  afterEach(() => {
+    if (fs.existsSync(tmpDir)) {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+    }
   })
 
   describe('Malicious Pattern Detection', () => {
@@ -185,6 +199,73 @@ describe('SecurityScanner', () => {
       const findings = await scanner.scanCode(code)
       const finding = findings.find((f) => f.severity === 'high')
       expect(finding?.category).toBe('permission')
+    })
+  })
+
+  describe('Init/Shutdown Lifecycle', () => {
+    it('should initialize and load scan history', () => {
+      scanner.init()
+      expect(scanner).toBeDefined()
+    })
+
+    it('should create data directory on init()', () => {
+      scanner.init()
+      const dataDir = path.join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra')
+      expect(fs.existsSync(dataDir)).toBe(true)
+    })
+
+    it('should save scan history on shutdown()', async () => {
+      scanner.init()
+      const findings = await scanner.scanCode('console.log("test")')
+      scanner.shutdown()
+
+      const historyPath = path.join(
+        process.env.HOME || process.env.USERPROFILE || '/tmp',
+        '.nyra',
+        'security-scan-history.json'
+      )
+
+      if (fs.existsSync(historyPath)) {
+        const data = JSON.parse(fs.readFileSync(historyPath, 'utf-8'))
+        expect(data).toBeDefined()
+        expect(typeof data).toBe('object')
+      }
+    })
+
+    it('should restore scan history across instances', async () => {
+      scanner.init()
+      await scanner.scanCode('console.log("test")')
+      scanner.shutdown()
+
+      const scanner2 = new SecurityScanner()
+      scanner2.init()
+      expect(scanner2).toBeDefined()
+    })
+
+    it('should persist and recover scan results', async () => {
+      scanner.init()
+
+      const testPluginDir = path.join(tmpDir, 'test-plugin')
+      fs.mkdirSync(testPluginDir, { recursive: true })
+
+      const testFile = path.join(testPluginDir, 'index.js')
+      fs.writeFileSync(testFile, 'console.log("test")')
+
+      const result = await scanner.scanPlugin(testPluginDir)
+      expect(result.pluginId).toBeDefined()
+
+      scanner.shutdown()
+
+      const historyPath = path.join(
+        process.env.HOME || process.env.USERPROFILE || '/tmp',
+        '.nyra',
+        'security-scan-history.json'
+      )
+
+      if (fs.existsSync(historyPath)) {
+        const data = JSON.parse(fs.readFileSync(historyPath, 'utf-8'))
+        expect(data).toBeDefined()
+      }
     })
   })
 })

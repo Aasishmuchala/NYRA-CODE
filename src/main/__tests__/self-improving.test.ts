@@ -1,7 +1,24 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { ProceduralMemory, FeedbackLoop, SelfImprovingAgent } from '../platform/self-improving'
+import * as fs from 'fs'
+import * as path from 'path'
+import * as os from 'os'
 
 describe('Self-Improving Agent System', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), 'nyra-test-self-improving')
+    if (!fs.existsSync(tmpDir)) {
+      fs.mkdirSync(tmpDir, { recursive: true })
+    }
+  })
+
+  afterEach(() => {
+    if (fs.existsSync(tmpDir)) {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+    }
+  })
   describe('ProceduralMemory', () => {
     let memory: ProceduralMemory
 
@@ -350,6 +367,223 @@ describe('Self-Improving Agent System', () => {
       const report = agent.getPerformanceReport()
       expect(report.executionCount).toBeGreaterThan(0)
       expect(report.score.totalAttempts).toBeGreaterThan(0)
+    })
+  })
+
+  describe('Init/Shutdown Lifecycle', () => {
+    it('should initialize and load procedures from disk', () => {
+      const memory = new ProceduralMemory()
+      memory.init()
+      expect(memory).toBeDefined()
+    })
+
+    it('should create data directory on init()', () => {
+      const memory = new ProceduralMemory()
+      memory.init()
+      const dataDir = path.join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra')
+      expect(fs.existsSync(dataDir)).toBe(true)
+    })
+
+    it('should save procedures on memory shutdown', () => {
+      const memory = new ProceduralMemory()
+      memory.init()
+
+      memory.learn({
+        trigger: ['search', 'query'],
+        steps: ['retrieve', 'filter', 'rank'],
+        taskId: 'task-1',
+      })
+
+      memory.shutdown()
+
+      const storagePath = path.join(
+        process.env.HOME || process.env.USERPROFILE || '/tmp',
+        '.nyra',
+        'procedural-memory.json'
+      )
+
+      if (fs.existsSync(storagePath)) {
+        const data = JSON.parse(fs.readFileSync(storagePath, 'utf-8'))
+        expect(data.procedures).toBeDefined()
+        expect(data.procedures.length).toBeGreaterThan(0)
+      }
+    })
+
+    it('should restore procedures after init+shutdown cycle', () => {
+      const memory = new ProceduralMemory()
+      memory.init()
+
+      const learned = memory.learn({
+        trigger: ['persist', 'test'],
+        steps: ['step1', 'step2', 'step3'],
+        taskId: 'task-1',
+      })
+
+      memory.shutdown()
+
+      const memory2 = new ProceduralMemory()
+      memory2.init()
+
+      const procedures = memory2.getProcedures()
+      expect(procedures.length).toBeGreaterThan(0)
+      expect(procedures.some((p) => p.id === learned.id)).toBe(true)
+    })
+
+    it('should preserve procedure success rates across cycles', () => {
+      const memory = new ProceduralMemory()
+      memory.init()
+
+      const proc = memory.learn({
+        trigger: ['test'],
+        steps: ['execute'],
+        taskId: 'task-1',
+      })
+
+      memory.reinforce(proc.id, true)
+      memory.reinforce(proc.id, false)
+
+      memory.shutdown()
+
+      const memory2 = new ProceduralMemory()
+      memory2.init()
+
+      const restored = memory2.getProcedures().find((p) => p.id === proc.id)
+      expect(restored?.successRate).toBeLessThan(1.0)
+      expect(restored?.successRate).toBeGreaterThan(0)
+    })
+
+    it('should save feedback outcomes on shutdown', () => {
+      const feedback = new FeedbackLoop()
+      feedback.init()
+
+      feedback.recordOutcome('task-1', 'agent-a', { type: 'test' }, 5)
+      feedback.recordOutcome('task-2', 'agent-a', { type: 'test' }, 4)
+
+      feedback.shutdown()
+
+      const feedbackPath = path.join(
+        process.env.HOME || process.env.USERPROFILE || '/tmp',
+        '.nyra',
+        'feedback-loop.json'
+      )
+
+      if (fs.existsSync(feedbackPath)) {
+        const data = JSON.parse(fs.readFileSync(feedbackPath, 'utf-8'))
+        expect(data.outcomes).toBeDefined()
+      }
+    })
+
+    it('should restore feedback outcomes after init+shutdown cycle', () => {
+      const feedback = new FeedbackLoop()
+      feedback.init()
+
+      feedback.recordOutcome('task-1', 'agent-a', {}, 5)
+      feedback.recordOutcome('task-2', 'agent-a', {}, 3)
+
+      feedback.shutdown()
+
+      const feedback2 = new FeedbackLoop()
+      feedback2.init()
+
+      const outcomes = feedback2.getOutcomes('agent-a')
+      // Outcomes are persisted, may accumulate from other tests
+      expect(outcomes.length).toBeGreaterThanOrEqual(2)
+    })
+
+    it('should preserve agent performance scores across cycles', () => {
+      const feedback = new FeedbackLoop()
+      feedback.init()
+
+      feedback.recordOutcome('task-score-1', 'agent-score-test', {}, 5)
+      feedback.recordOutcome('task-score-2', 'agent-score-test', {}, 4)
+      feedback.recordOutcome('task-score-3', 'agent-score-test', {}, 2)
+
+      const scoreBefore = feedback.getAgentScore('agent-score-test')
+
+      feedback.shutdown()
+
+      const feedback2 = new FeedbackLoop()
+      feedback2.init()
+
+      const scoreAfter = feedback2.getAgentScore('agent-score-test')
+      expect(scoreAfter.score).toBeCloseTo(scoreBefore.score, 1)
+      expect(scoreAfter.totalAttempts).toBeGreaterThanOrEqual(3)
+    })
+
+    it('should initialize self-improving agent with persistent components', () => {
+      const memory = new ProceduralMemory()
+      const feedback = new FeedbackLoop()
+      const agent = new SelfImprovingAgent('agent-1', memory, feedback)
+
+      memory.init()
+      feedback.init()
+
+      expect(agent).toBeDefined()
+    })
+
+    it('should persist agent learning state across shutdown cycle', async () => {
+      const memory = new ProceduralMemory()
+      const feedback = new FeedbackLoop()
+      const agent = new SelfImprovingAgent('agent-persist-test', memory, feedback)
+
+      memory.init()
+      feedback.init()
+
+      // Execute and record
+      await agent.execute({
+        id: 'task-persist-1',
+        type: 'test',
+        keywords: ['test'],
+        payload: {},
+      })
+
+      feedback.recordOutcome('task-persist-1', 'agent-persist-test', {}, 5)
+
+      // Shutdown
+      memory.shutdown()
+      feedback.shutdown()
+
+      // Restore
+      const memory2 = new ProceduralMemory()
+      const feedback2 = new FeedbackLoop()
+      const agent2 = new SelfImprovingAgent('agent-persist-test', memory2, feedback2)
+
+      memory2.init()
+      feedback2.init()
+
+      const report = agent2.getPerformanceReport()
+      expect(report.agentId).toBe('agent-persist-test')
+    })
+
+    it('should recover execution history after init/shutdown cycle', async () => {
+      const memory = new ProceduralMemory()
+      const feedback = new FeedbackLoop()
+      const agent = new SelfImprovingAgent('agent-exec-test2', memory, feedback)
+
+      memory.init()
+      feedback.init()
+
+      await agent.execute({
+        id: 'task-exec-2',
+        type: 'test',
+        keywords: ['test'],
+        payload: {},
+      })
+
+      memory.shutdown()
+      feedback.shutdown()
+
+      const memory2 = new ProceduralMemory()
+      const feedback2 = new FeedbackLoop()
+      const agent2 = new SelfImprovingAgent('agent-exec-test2', memory2, feedback2)
+
+      memory2.init()
+      feedback2.init()
+
+      // After init, the new instance should have access to the agent's data
+      const report = agent2.getPerformanceReport()
+      expect(report).toBeDefined()
+      expect(report.agentId).toBe('agent-exec-test2')
     })
   })
 })

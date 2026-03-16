@@ -46,6 +46,59 @@ const MALICIOUS_PATTERNS: Array<{ pattern: RegExp; severity: SecurityFinding['se
 ]
 
 export class SecurityScanner {
+  private scanHistoryMap: Map<string, ScanResult[]> = new Map()
+  private dataDir: string
+
+  constructor() {
+    this.dataDir = require('path').join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra')
+  }
+
+  /**
+   * Initialize: load scan history from disk
+   */
+  init(): void {
+    try {
+      const fs = require('fs')
+      const path = require('path')
+      fs.mkdirSync(this.dataDir, { recursive: true })
+
+      const historyPath = path.join(this.dataDir, 'security-scan-history.json')
+      if (fs.existsSync(historyPath)) {
+        const data = fs.readFileSync(historyPath, 'utf-8')
+        const history = JSON.parse(data) as Record<string, ScanResult[]>
+        for (const [pluginId, results] of Object.entries(history)) {
+          this.scanHistoryMap.set(pluginId, results)
+        }
+        console.log('[SecurityScanner] Loaded scan history for', this.scanHistoryMap.size, 'plugins')
+      }
+    } catch (err) {
+      console.error('[SecurityScanner] Failed to load scan history:', err)
+    }
+  }
+
+  /**
+   * Shutdown: save scan history to disk
+   */
+  shutdown(): void {
+    try {
+      const fs = require('fs')
+      const path = require('path')
+      fs.mkdirSync(this.dataDir, { recursive: true })
+
+      const historyPath = path.join(this.dataDir, 'security-scan-history.json')
+      const historyObj: Record<string, ScanResult[]> = {}
+
+      Array.from(this.scanHistoryMap.entries()).forEach(([pluginId, results]) => {
+        historyObj[pluginId] = results
+      })
+
+      fs.writeFileSync(historyPath, JSON.stringify(historyObj, null, 2), 'utf-8')
+      console.log('[SecurityScanner] Saved scan history for', this.scanHistoryMap.size, 'plugins')
+    } catch (err) {
+      console.error('[SecurityScanner] Failed to save scan history:', err)
+    }
+  }
+
   async scanPlugin(pluginDir: string): Promise<ScanResult> {
     const start = Date.now()
     const fs = require('fs')
@@ -130,8 +183,9 @@ export class SecurityScanner {
     const score = this.calculateScore(findings)
     const grade = score >= 90 ? 'A' : score >= 75 ? 'B' : score >= 60 ? 'C' : score >= 40 ? 'D' : 'F'
 
-    return {
-      pluginId: path.basename(pluginDir),
+    const pluginId = path.basename(pluginDir)
+    const result: ScanResult = {
+      pluginId,
       score,
       grade,
       findings,
@@ -139,6 +193,14 @@ export class SecurityScanner {
       scannedAt: Date.now(),
       durationMs: Date.now() - start,
     }
+
+    // Persist scan result to history
+    if (!this.scanHistoryMap.has(pluginId)) {
+      this.scanHistoryMap.set(pluginId, [])
+    }
+    this.scanHistoryMap.get(pluginId)!.push(result)
+
+    return result
   }
 
   async scanCode(code: string, filename = 'inline'): Promise<SecurityFinding[]> {
@@ -200,3 +262,4 @@ export class SecurityScanner {
 }
 
 export const securityScanner = new SecurityScanner()
+

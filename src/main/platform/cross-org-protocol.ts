@@ -1,6 +1,10 @@
 import { EventEmitter } from 'events';
 import { randomUUID } from 'crypto';
 import { createHmac } from 'crypto';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
+import { createServer, request as httpRequest, Server } from 'http';
+import { IncomingMessage, ServerResponse } from 'http';
 
 /**
  * Represents an agent's identity and capabilities
@@ -47,10 +51,129 @@ class CrossOrgProtocol extends EventEmitter {
   private readonly rateLimitWindow = 60000; // 1 minute
   private readonly maxRetries = 3;
   private readonly baseBackoffMs = 1000;
+  private dataDir: string = '';
+  private httpServer: Server | null = null;
+  private serverPort = 18792;
+  private remoteEndpoints: Map<string, string> = new Map(); // orgId -> URL
 
   constructor() {
     super();
     this.startMessageProcessor();
+  }
+
+  /**
+   * Initialize CrossOrgProtocol and load persisted data
+   */
+  init(): void {
+    this.dataDir = join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra', 'platform');
+
+    // Create directory if it doesn't exist
+    if (!existsSync(this.dataDir)) {
+      mkdirSync(this.dataDir, { recursive: true });
+    }
+
+    // Load protocol data from disk
+    const protocolPath = join(this.dataDir, 'cross-org.json');
+    if (existsSync(protocolPath)) {
+      try {
+        const data = JSON.parse(readFileSync(protocolPath, 'utf-8')) as {
+          localAgents?: Record<string, AgentIdentity>;
+          knownAgents?: Record<string, AgentIdentity>;
+          remoteEndpoints?: Record<string, string>;
+        };
+        if (data.localAgents) {
+          this.localAgents = new Map(Object.entries(data.localAgents));
+        }
+        if (data.knownAgents) {
+          this.knownAgents = new Map(Object.entries(data.knownAgents));
+        }
+        if (data.remoteEndpoints) {
+          this.remoteEndpoints = new Map(Object.entries(data.remoteEndpoints));
+        }
+      } catch (error) {
+        console.error('Failed to load cross-org protocol data:', error);
+      }
+    }
+
+    // Start HTTP server for incoming messages
+    this.startServer(this.serverPort);
+  }
+
+  /**
+   * Shutdown CrossOrgProtocol and persist data to disk
+   */
+  shutdown(): void {
+    if (!this.dataDir) return;
+
+    // Close HTTP server
+    if (this.httpServer) {
+      this.httpServer.close();
+      this.httpServer = null;
+    }
+
+    try {
+      const protocolPath = join(this.dataDir, 'cross-org.json');
+      const data = {
+        localAgents: Object.fromEntries(this.localAgents),
+        knownAgents: Object.fromEntries(this.knownAgents),
+        remoteEndpoints: Object.fromEntries(this.remoteEndpoints),
+      };
+      writeFileSync(protocolPath, JSON.stringify(data, null, 2), 'utf-8');
+    } catch (error) {
+      console.error('Failed to save cross-org protocol data:', error);
+    }
+  }
+
+  /**
+   * Start HTTP server to receive messages from other NYRA instances
+   */
+  startServer(port: number): void {
+    this.httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
+      if (req.method === 'POST' && req.url === '/message') {
+        let body = '';
+        req.on('data', (chunk) => {
+          body += chunk.toString();
+        });
+
+        req.on('end', () => {
+          try {
+            const message = JSON.parse(body) as AgentMessage;
+            const verified = this.receiveMessage(message);
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: verified }));
+          } catch (error) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid message' }));
+          }
+        });
+      } else {
+        res.writeHead(404);
+        res.end();
+      }
+    });
+
+    this.httpServer.listen(port, () => {
+      console.log(`CrossOrgProtocol HTTP server listening on port ${port}`);
+    });
+
+    this.httpServer.on('error', (error) => {
+      console.error('CrossOrgProtocol HTTP server error:', error);
+    });
+  }
+
+  /**
+   * Register a remote NYRA instance endpoint
+   */
+  registerRemoteEndpoint(orgId: string, url: string): void {
+    this.remoteEndpoints.set(orgId, url);
+  }
+
+  /**
+   * Discover remote endpoints (placeholder for mDNS-style discovery or registry)
+   */
+  discover(): Map<string, string> {
+    return new Map(this.remoteEndpoints);
   }
 
   /**
@@ -85,7 +208,7 @@ class CrossOrgProtocol extends EventEmitter {
   }
 
   /**
-   * Send a signed message to another agent
+   * Send a signed message to another agent via HTTP
    */
   sendMessage(to: AgentIdentity, type: AgentMessage['type'], payload: unknown): AgentMessage {
     const from = this.getLocalAgent();
@@ -118,7 +241,60 @@ class CrossOrgProtocol extends EventEmitter {
     this.messageQueue.push(queued);
     this.emit('message-queued', message);
 
+    // Try to send immediately
+    this.deliverMessage(message);
+
     return message;
+  }
+
+  /**
+   * Deliver a message to remote endpoint via HTTP POST
+   */
+  private deliverMessage(message: AgentMessage): void {
+    const targetUrl = this.remoteEndpoints.get(message.to.orgId);
+    if (!targetUrl) {
+      console.warn(`No endpoint registered for org ${message.to.orgId}`);
+      return;
+    }
+
+    const postData = JSON.stringify(message);
+
+    const url = new URL('/message', targetUrl);
+    const requestOptions = {
+      hostname: url.hostname,
+      port: url.port || 80,
+      path: url.pathname + url.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+      },
+    };
+
+    const req = httpRequest(requestOptions, (res) => {
+      let data = '';
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+
+      res.on('end', () => {
+        try {
+          const response = JSON.parse(data) as { success: boolean };
+          if (response.success) {
+            this.emit('message-delivered', message);
+          }
+        } catch (error) {
+          console.error('Failed to parse delivery response:', error);
+        }
+      });
+    });
+
+    req.on('error', (error) => {
+      console.error('Failed to deliver message:', error);
+    });
+
+    req.write(postData);
+    req.end();
   }
 
   /**
@@ -296,6 +472,65 @@ class AgentMarketplace extends EventEmitter {
   private agents: Map<string, AgentDefinition> = new Map();
   private accessRequests: Map<string, { agentId: string; orgId: string; timestamp: number; status: 'pending' | 'approved' | 'denied' }[]> = new Map();
   private grants: Map<string, Set<string>> = new Map(); // agentId -> Set<orgId>
+  private dataDir: string = '';
+
+  /**
+   * Initialize AgentMarketplace and load persisted data
+   */
+  init(): void {
+    this.dataDir = join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra', 'platform');
+
+    // Create directory if it doesn't exist
+    if (!existsSync(this.dataDir)) {
+      mkdirSync(this.dataDir, { recursive: true });
+    }
+
+    // Load marketplace data from disk
+    const marketplacePath = join(this.dataDir, 'agent-marketplace.json');
+    if (existsSync(marketplacePath)) {
+      try {
+        const data = JSON.parse(readFileSync(marketplacePath, 'utf-8')) as {
+          agents?: Record<string, AgentDefinition>;
+          accessRequests?: Record<string, Array<{ agentId: string; orgId: string; timestamp: number; status: 'pending' | 'approved' | 'denied' }>>;
+          grants?: Record<string, string[]>;
+        };
+        if (data.agents) {
+          this.agents = new Map(Object.entries(data.agents));
+        }
+        if (data.accessRequests) {
+          this.accessRequests = new Map(Object.entries(data.accessRequests));
+        }
+        if (data.grants) {
+          for (const [key, orgIds] of Object.entries(data.grants)) {
+            this.grants.set(key, new Set(orgIds));
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load agent marketplace data:', error);
+      }
+    }
+  }
+
+  /**
+   * Shutdown AgentMarketplace and persist data to disk
+   */
+  shutdown(): void {
+    if (!this.dataDir) return;
+
+    try {
+      const marketplacePath = join(this.dataDir, 'agent-marketplace.json');
+      const data = {
+        agents: Object.fromEntries(this.agents),
+        accessRequests: Object.fromEntries(this.accessRequests),
+        grants: Object.fromEntries(
+          Array.from(this.grants.entries()).map(([key, set]) => [key, Array.from(set)])
+        ),
+      };
+      writeFileSync(marketplacePath, JSON.stringify(data, null, 2), 'utf-8');
+    } catch (error) {
+      console.error('Failed to save agent marketplace data:', error);
+    }
+  }
 
   /**
    * List available agents with optional filters

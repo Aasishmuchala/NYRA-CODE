@@ -53,6 +53,24 @@ export class TelemetryService extends EventEmitter {
   }
 
   /**
+   * Initialize: load consent state, device ID, and queued events from disk
+   */
+  init(): void {
+    try {
+      const queuePath = path.join(path.dirname(this.consentFile), 'telemetry-queue.json')
+      if (fs.existsSync(queuePath)) {
+        const data = fs.readFileSync(queuePath, 'utf-8')
+        const queues = JSON.parse(data)
+        this.eventQueue = queues.events || []
+        this.crashQueue = queues.crashes || []
+        console.log(`[TelemetryService] Loaded ${this.eventQueue.length} queued events and ${this.crashQueue.length} crashes`)
+      }
+    } catch (err) {
+      console.error('[TelemetryService] Failed to load telemetry queue:', err)
+    }
+  }
+
+  /**
    * Check if telemetry is enabled
    */
   isEnabled(): boolean {
@@ -206,14 +224,37 @@ export class TelemetryService extends EventEmitter {
   }
 
   /**
-   * Shutdown telemetry service
+   * Shutdown telemetry service and persist queued events to disk
    */
   shutdown(): void {
     if (this.batchInterval) {
       clearInterval(this.batchInterval)
       this.batchInterval = null
     }
+
+    // Flush events and save any remaining to disk
     this.flush()
+
+    // Persist remaining queues to disk
+    try {
+      const queuePath = path.join(path.dirname(this.consentFile), 'telemetry-queue.json')
+      const dir = path.dirname(queuePath)
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true })
+      }
+
+      fs.writeFileSync(
+        queuePath,
+        JSON.stringify({
+          events: this.eventQueue,
+          crashes: this.crashQueue,
+        }, null, 2),
+        'utf-8'
+      )
+      console.log(`[TelemetryService] Persisted ${this.eventQueue.length + this.crashQueue.length} items to queue`)
+    } catch (err) {
+      console.error('[TelemetryService] Failed to persist telemetry queue:', err)
+    }
   }
 
   /**

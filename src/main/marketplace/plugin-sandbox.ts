@@ -45,16 +45,61 @@ interface AuditEntry {
 export class PluginSandbox extends EventEmitter {
   private sandboxes: Map<string, PluginSandboxContext> = new Map()
   private pluginDataDir: string
+  private auditHistoryDir: string
 
   constructor() {
     super()
     this.pluginDataDir = path.join(os.homedir(), '.nyra', 'plugins')
+    this.auditHistoryDir = path.join(os.homedir(), '.nyra', 'plugin-audits')
     this.ensurePluginDataDirs()
   }
 
   private ensurePluginDataDirs(): void {
     if (!fs.existsSync(this.pluginDataDir)) {
       fs.mkdirSync(this.pluginDataDir, { recursive: true })
+    }
+    if (!fs.existsSync(this.auditHistoryDir)) {
+      fs.mkdirSync(this.auditHistoryDir, { recursive: true })
+    }
+  }
+
+  /**
+   * Initialize: load sandbox configs and audit logs from disk
+   */
+  init(): void {
+    try {
+      fs.mkdirSync(this.auditHistoryDir, { recursive: true })
+      const configPath = path.join(this.auditHistoryDir, 'plugin-sandbox.json')
+
+      if (fs.existsSync(configPath)) {
+        const data = fs.readFileSync(configPath, 'utf-8')
+        const config = JSON.parse(data)
+        // Restore audit logs for existing sandboxes (runtime state cannot be persisted)
+        console.log('[PluginSandbox] Loaded persisted configuration')
+      }
+    } catch (err) {
+      console.error('[PluginSandbox] Failed to load configuration:', err)
+    }
+  }
+
+  /**
+   * Shutdown: save audit logs and sandbox state to disk
+   */
+  shutdown(): void {
+    try {
+      fs.mkdirSync(this.auditHistoryDir, { recursive: true })
+
+      // Save audit logs for each active sandbox
+      const auditLogsMap: Record<string, AuditEntry[]> = {}
+      Array.from(this.sandboxes.entries()).forEach(([pluginId, sandbox]) => {
+        auditLogsMap[pluginId] = sandbox.auditLog
+      })
+
+      const configPath = path.join(this.auditHistoryDir, 'plugin-sandbox.json')
+      fs.writeFileSync(configPath, JSON.stringify(auditLogsMap, null, 2), 'utf-8')
+      console.log('[PluginSandbox] Saved audit logs for', Object.keys(auditLogsMap).length, 'sandboxes')
+    } catch (err) {
+      console.error('[PluginSandbox] Failed to save audit logs:', err)
     }
   }
 

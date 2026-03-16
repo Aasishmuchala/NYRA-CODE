@@ -1,4 +1,22 @@
 import { EventEmitter } from 'events';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+function getDataDir(): string {
+  const homeDir = process.env.HOME || process.env.USERPROFILE || '/tmp';
+  return join(homeDir, '.nyra', 'enterprise');
+}
+
+function ensureDataDir(): void {
+  const dir = getDataDir();
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+}
 
 // ============================================================================
 // Types
@@ -98,9 +116,74 @@ class AdminConsole extends EventEmitter {
   private auditCounter = 0;
   private userCounter = 0;
 
+  init(): void {
+    ensureDataDir();
+    try {
+      const configPath = join(getDataDir(), 'admin-config.json');
+      if (existsSync(configPath)) {
+        const data = JSON.parse(readFileSync(configPath, 'utf-8'));
+        if (data.orgStats && typeof data.orgStats === 'object') {
+          Object.entries(data.orgStats).forEach(([orgId, stats]) => {
+            this.orgStats.set(orgId, stats as OrgStats);
+          });
+        }
+        if (data.users && typeof data.users === 'object') {
+          Object.entries(data.users).forEach(([userId, user]) => {
+            const u = user as User;
+            u.lastLoginAt = new Date(u.lastLoginAt);
+            this.users.set(userId, u);
+          });
+        }
+        if (Array.isArray(data.auditLogs)) {
+          this.auditLogs = data.auditLogs.map((entry: AuditLogEntry) => ({
+            ...entry,
+            timestamp: new Date(entry.timestamp),
+          }));
+        }
+        if (data.billingData && typeof data.billingData === 'object') {
+          Object.entries(data.billingData).forEach(([orgId, billing]) => {
+            const b = billing as BillingOverview;
+            b.nextBillingDate = new Date(b.nextBillingDate);
+            this.billingData.set(orgId, b);
+          });
+        }
+        if (typeof data.auditCounter === 'number') {
+          this.auditCounter = data.auditCounter;
+        }
+        if (typeof data.userCounter === 'number') {
+          this.userCounter = data.userCounter;
+        }
+      }
+    } catch (err) {
+      // Fail silently on corrupt file
+    }
+  }
+
+  shutdown(): void {
+    try {
+      const configPath = join(getDataDir(), 'admin-config.json');
+      ensureDataDir();
+      const data = {
+        orgStats: Object.fromEntries(this.orgStats),
+        users: Object.fromEntries(this.users),
+        auditLogs: this.auditLogs,
+        billingData: Object.fromEntries(this.billingData),
+        auditCounter: this.auditCounter,
+        userCounter: this.userCounter,
+      };
+      writeFileSync(configPath, JSON.stringify(data, null, 2));
+    } catch (err) {
+      // Fail silently on write error
+    }
+  }
+
   // ========================================================================
   // Dashboard / Organization Stats
   // ========================================================================
+
+  getDashboard(orgId: string): OrgStats {
+    return this.getOrgStats(orgId);
+  }
 
   getOrgStats(orgId: string): OrgStats {
     if (!this.orgStats.has(orgId)) {
@@ -432,3 +515,6 @@ export {
   type UserFilter,
   type AuditLogFilter,
 };
+
+// Initialize on module load
+adminConsole.init();

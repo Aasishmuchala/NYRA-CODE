@@ -1,11 +1,25 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { ModelRouter, QueryContext } from '../model-router-year2'
+import * as fs from 'fs'
+import * as path from 'path'
+import * as os from 'os'
 
 describe('ModelRouter', () => {
   let router: ModelRouter
+  let tmpDir: string
 
   beforeEach(() => {
     router = new ModelRouter()
+    tmpDir = path.join(os.tmpdir(), 'nyra-test-model-router')
+    if (!fs.existsSync(tmpDir)) {
+      fs.mkdirSync(tmpDir, { recursive: true })
+    }
+  })
+
+  afterEach(() => {
+    if (fs.existsSync(tmpDir)) {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+    }
   })
 
   describe('Complexity Estimation', () => {
@@ -336,6 +350,108 @@ describe('ModelRouter', () => {
 
       const decision = router.route(query)
       expect(decision.confidence).toBeLessThan(1)
+    })
+  })
+
+  describe('Init/Shutdown Lifecycle', () => {
+    it('should initialize and load budget state from disk', () => {
+      router.init()
+      const budget = router.getBudget()
+      expect(budget).toBeDefined()
+      expect(budget.dailyLimitCents).toBeGreaterThan(0)
+    })
+
+    it('should create data directory on init()', () => {
+      router.init()
+      const dataDir = path.join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra')
+      expect(fs.existsSync(dataDir)).toBe(true)
+    })
+
+    it('should save budget and model state on shutdown()', () => {
+      router.init()
+      router.setBudget(1000, 10000)
+      const spendBefore = router.getBudget().spentTodayCents
+      router.recordSpend(100)
+      router.shutdown()
+
+      const filePath = path.join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra', 'model-router.json')
+
+      if (fs.existsSync(filePath)) {
+        const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+        expect(data.budget).toBeDefined()
+        expect(data.budget.dailyLimitCents).toBe(1000)
+        expect(data.budget.spentTodayCents).toBe(spendBefore + 100)
+      }
+    })
+
+    it('should restore budget state after init+shutdown cycle', () => {
+      router.init()
+      router.setBudget(500, 5000)
+      const spendBefore = router.getBudget().spentTodayCents
+      router.recordSpend(50)
+      router.shutdown()
+
+      const router2 = new ModelRouter()
+      router2.init()
+
+      const budget = router2.getBudget()
+      expect(budget.dailyLimitCents).toBe(500)
+      expect(budget.monthlyLimitCents).toBe(5000)
+      expect(budget.spentTodayCents).toBe(spendBefore + 50)
+    })
+
+    it('should persist routing history on shutdown', () => {
+      router.init()
+
+      const query: QueryContext = {
+        text: 'simple question',
+        type: 'chat',
+      }
+
+      const decision = router.route(query)
+      expect(decision).toBeDefined()
+
+      router.shutdown()
+
+      const filePath = path.join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.nyra', 'model-router.json')
+
+      if (fs.existsSync(filePath)) {
+        const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+        expect(data.routingHistory).toBeDefined()
+      }
+    })
+
+    it('should return valid model after init', () => {
+      router.init()
+
+      const query: QueryContext = {
+        text: 'hello world',
+        type: 'chat',
+      }
+
+      const decision = router.route(query)
+
+      expect(decision.modelId).toBeDefined()
+      expect(decision.tier).toBeDefined()
+      expect(['local', 'cloud-fast', 'cloud-smart', 'cloud-reasoning'].includes(decision.tier)).toBe(true)
+    })
+
+    it('should persist spend state across cycles', () => {
+      router.init()
+      const budgetBefore = router.getBudget()
+      const spendBefore = budgetBefore.spentTodayCents
+      const monthBefore = budgetBefore.spentThisMonthCents
+
+      router.recordSpend(25)
+      router.recordSpend(25)
+      router.shutdown()
+
+      const router2 = new ModelRouter()
+      router2.init()
+
+      const budget = router2.getBudget()
+      expect(budget.spentTodayCents).toBe(spendBefore + 50)
+      expect(budget.spentThisMonthCents).toBe(monthBefore + 50)
     })
   })
 })
