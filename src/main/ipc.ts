@@ -750,24 +750,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
   ipcMain.handle('desktop:tool-definitions',  () => getDesktopToolDefinitions())
 
-  // ── Computer Use (Vision-Based Automation) ────────────────────────────────
-  ipcMain.handle('computer-use:start', async (_e, task: string, config?: any) => {
-    try {
-      const session = await computerUseBridge.start(task, config)
-      return { success: true, session: { ...session, steps: session.steps.map(s => ({ ...s, screenshot: null })) } }
-    } catch (err: any) {
-      return { success: false, error: err.message }
-    }
-  })
-  ipcMain.handle('computer-use:pause',    () => { computerUseBridge.pause(); return true })
-  ipcMain.handle('computer-use:resume',   () => { computerUseBridge.resume(); return true })
-  ipcMain.handle('computer-use:cancel',   () => { computerUseBridge.cancel(); return true })
-  ipcMain.handle('computer-use:session',  () => {
-    const session = computerUseBridge.getSession()
-    if (!session) return null
-    // Strip screenshot base64 from steps (too large for IPC)
-    return { ...session, steps: session.steps.map(s => ({ ...s, screenshot: null })) }
-  })
+
   ipcMain.handle('computer-use:step-screenshot', (_e, stepId: number) => {
     const screenshot = computerUseBridge.getStepScreenshot(stepId)
     return screenshot ? { base64: screenshot.base64, width: screenshot.width, height: screenshot.height } : null
@@ -1297,7 +1280,6 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('memory:get-project-ctx',   (_e, pid: string, key?: string) => memoryManager.getProjectContext(pid, key))
   ipcMain.handle('memory:delete-project-ctx',(_e, pid: string, key?: string) => { memoryManager.deleteProjectContext(pid, key); return true })
   ipcMain.handle('memory:build-context',     (_e, opts?: { projectId?: string; maxFacts?: number; maxSummaries?: number }) => memoryManager.buildContextBlock(opts))
-  ipcMain.handle('memory:stats',             () => memoryManager.stats())
 
   // ── Codebase Indexer ───────────────────────────────────────────────────────────
   ipcMain.handle('indexer:open',           (_e, root: string) => codebaseIndexer.open(root))
@@ -2090,10 +2072,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     try { return { success: true, result: themeEngine.listThemes() } }
     catch (err: any) { return { success: false, error: err.message } }
   })
-  ipcMain.handle('theme:get', async (_e, id: string) => {
-    try { return { success: true, result: themeEngine.getTheme(id) } }
-    catch (err: any) { return { success: false, error: err.message } }
-  })
+
   ipcMain.handle('theme:create', async (_e, name: string, palette: any, opts?: any) => {
     try { return { success: true, result: themeEngine.createTheme(name, palette, opts) } }
     catch (err: any) { return { success: false, error: err.message } }

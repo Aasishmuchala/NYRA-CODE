@@ -165,3 +165,5 @@ export class ChannelRouter extends EventEmitter {
     return cleared
   }
 }
+
+export const channelRouter = new ChannelRouter()

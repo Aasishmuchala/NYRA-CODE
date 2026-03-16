@@ -1518,14 +1518,7 @@ const nyraApi = {
     setConfig:              (...args: any[]): Promise<any>        => ipcRenderer.invoke('voiceEngine:setConfig', ...args),
   },
 
-  // ── Year 2: Model Router ───────────────────────────────────────────────────
-  modelRouter: {
-    init:                   (): Promise<any>                      => ipcRenderer.invoke('modelRouter:init'),
-    route:                  (...args: any[]): Promise<any>        => ipcRenderer.invoke('modelRouter:route', ...args),
-    getStats:               (): Promise<any>                      => ipcRenderer.invoke('modelRouter:getStats'),
-    addModel:               (...args: any[]): Promise<any>        => ipcRenderer.invoke('modelRouter:addModel', ...args),
-    setBudget:              (...args: any[]): Promise<any>        => ipcRenderer.invoke('modelRouter:setBudget', ...args),
-  },
+  // ── Year 2: Model Router (merged into existing modelRouter above) ─────────
 
   // ── Year 2: Security Scanner ───────────────────────────────────────────────
   securityScanner: {
