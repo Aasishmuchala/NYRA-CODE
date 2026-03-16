@@ -180,6 +180,7 @@ async function readJson<T>(filePath: string, fallback: T): Promise<T> {
   } catch { return fallback }
 }
 async function writeJson(filePath: string, data: unknown): Promise<void> {
+  await fs.promises.mkdir(path.dirname(filePath), { recursive: true })
   await fs.promises.writeFile(filePath, JSON.stringify(data, null, 2), 'utf8')
 }
 
@@ -190,6 +191,28 @@ const writeProjects= (p: Project[])      => writeJson(PROJECTS_PATH, p)
 const readPrompts  = (): Promise<SavedPrompt[]>   => readJson(PROMPTS_PATH, [])
 const writePrompts = (p: SavedPrompt[])  => writeJson(PROMPTS_PATH, p)
 const defaultTheme: ThemeConfig = { mode: 'dark', accent: 'indigo', fontSize: 'md', wallpaper: 'herringbone' }
+
+// ── Persistence lock (prevents race conditions in read-modify-write) ──────────
+let persistenceLock = Promise.resolve()
+function withLock<T>(fn: () => Promise<T>): Promise<T> {
+  const p = persistenceLock.then(fn, fn) // always runs, even if prior failed
+  persistenceLock = p.then(() => {}, () => {})
+  return p
+}
+
+// ── Cleanup functions for event listeners ────────────────────────────────────
+const cleanupFns: Array<() => void> = []
+
+export function cleanupIpcListeners(): void {
+  for (const fn of cleanupFns) {
+    try {
+      fn()
+    } catch (err) {
+      console.error('[IPC] Cleanup error:', err)
+    }
+  }
+  cleanupFns.length = 0
+}
 
 // ── Registration ───────────────────────────────────────────────────────────────
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
@@ -591,17 +614,21 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   const planEvents = ['plan:generating', 'plan:generated', 'plan:updated', 'plan:approved',
     'plan:cancelled', 'plan:executing', 'plan:completed', 'plan:failed', 'plan:step-update'] as const
   for (const evt of planEvents) {
-    planEngine.on(evt, (data: unknown) => {
+    const listener = (data: unknown) => {
       if (!mainWindow.isDestroyed()) mainWindow.webContents.send(evt, data)
-    })
+    }
+    planEngine.on(evt, listener)
+    cleanupFns.push(() => planEngine.off(evt, listener))
   }
   // Forward plan executor events to renderer
   const execEvents = ['plan:state', 'plan:step-started', 'plan:step-completed',
     'plan:paused', 'plan:resumed', 'plan:error'] as const
   for (const evt of execEvents) {
-    planExecutor.on(evt, (data: unknown) => {
+    const listener = (data: unknown) => {
       if (!mainWindow.isDestroyed()) mainWindow.webContents.send(evt, data)
-    })
+    }
+    planExecutor.on(evt, listener)
+    cleanupFns.push(() => planExecutor.off(evt, listener))
   }
 
   // ── Computer Use ──────────────────────────────────────────────────────────────
@@ -628,9 +655,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     'session:completed', 'session:failed', 'session:budget-exhausted',
     'step:started', 'step:completed', 'step:approval-needed'] as const
   for (const evt of cuEvents) {
-    computerUseAgent.on(evt, (data: unknown) => {
+    const listener = (data: unknown) => {
       if (!mainWindow.isDestroyed()) mainWindow.webContents.send(`computer-use:${evt}`, data)
-    })
+    }
+    computerUseAgent.on(evt, listener)
+    cleanupFns.push(() => computerUseAgent.off(evt, listener))
   }
 
   // ── Files ─────────────────────────────────────────────────────────────────────
@@ -650,24 +679,62 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       return { name: path.basename(p), size: s.size, content: fs.readFileSync(p).toString('base64'), mimeType: guessMime(p) }
     } catch (err: any) {
       if (err.message?.includes('Path access denied')) return { error: err.message }
-      return null
+      let errorMsg = err.message
+      if (err.code === 'ENOENT') errorMsg = 'File not found'
+      else if (err.code === 'EACCES') errorMsg = 'Permission denied'
+      return { error: errorMsg }
     }
   })
   ipcMain.handle('files:save-dialog', async (_e, name: string) => {
     const r = await dialog.showSaveDialog(mainWindow, { defaultPath: name })
     return r.canceled ? null : r.filePath
   })
-  ipcMain.handle('files:write',      (_e, p: string, c: string)       => { assertSafePath(p); fs.writeFileSync(p, Buffer.from(c, 'base64')); return true })
-  ipcMain.handle('files:write-text', (_e, p: string, content: string) => { assertSafePath(p); fs.writeFileSync(p, content, 'utf8'); return true })
+  ipcMain.handle('files:write', (_e, p: string, c: string) => {
+    try {
+      assertSafePath(p)
+      fs.writeFileSync(p, Buffer.from(c, 'base64'))
+      return true
+    } catch (err: any) {
+      console.error('[IPC] files:write failed:', err.message)
+      return false
+    }
+  })
+  ipcMain.handle('files:write-text', (_e, p: string, content: string) => {
+    try {
+      assertSafePath(p)
+      fs.writeFileSync(p, content, 'utf8')
+      return true
+    } catch (err: any) {
+      console.error('[IPC] files:write-text failed:', err.message)
+      return false
+    }
+  })
 
   // ── Notifications ─────────────────────────────────────────────────────────────
   ipcMain.handle('notify:send', (_e, title: string, body: string) => sendNotification(title, body, mainWindow))
 
   // ── Scheduled Tasks ───────────────────────────────────────────────────────────
   ipcMain.handle('scheduled:list',   () => readTasks())
-  ipcMain.handle('scheduled:add',    async (_e, t: ScheduledTask)           => { const ts = await readTasks(); ts.push(t); await writeTasks(ts); return true })
-  ipcMain.handle('scheduled:update', async (_e, id: string, p: Partial<ScheduledTask>) => { await writeTasks((await readTasks()).map(t => t.id === id ? { ...t, ...p } : t)); return true })
-  ipcMain.handle('scheduled:remove', async (_e, id: string)                 => { await writeTasks((await readTasks()).filter(t => t.id !== id)); return true })
+  ipcMain.handle('scheduled:add', async (_e, t: ScheduledTask) => {
+    return withLock(async () => {
+      const ts = await readTasks()
+      ts.push(t)
+      await writeTasks(ts)
+      return true
+    })
+  })
+  ipcMain.handle('scheduled:update', async (_e, id: string, p: Partial<ScheduledTask>) => {
+    return withLock(async () => {
+      await writeTasks((await readTasks()).map(t => t.id === id ? { ...t, ...p } : t))
+      return true
+    })
+  })
+  ipcMain.handle('scheduled:remove', async (_e, id: string) => {
+    return withLock(async () => {
+      await writeTasks((await readTasks()).filter(t => t.id !== id))
+      return true
+    })
+  })
 
   // ── Projects ──────────────────────────────────────────────────────────────────
   ipcMain.handle('projects:list',   () => readProjects())
@@ -1226,7 +1293,15 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   // ── Onboarding ──────────────────────────────────────────────────────────────
   ipcMain.handle('app:is-onboarded',   () => fs.existsSync(ONBOARDED_PATH))
-  ipcMain.handle('app:set-onboarded',  () => { writeJson(ONBOARDED_PATH, { onboarded: true, at: Date.now() }); return true })
+  ipcMain.handle('app:set-onboarded',  async () => {
+    try {
+      await writeJson(ONBOARDED_PATH, { onboarded: true, at: Date.now() })
+      return true
+    } catch (err: any) {
+      console.error('[IPC] app:set-onboarded failed:', err.message)
+      return false
+    }
+  })
 
   // ── Terminal (PTY) ──────────────────────────────────────────────────────────
   ipcMain.handle('pty:create',  (_e, cwd?: string) => ptyManager.create(cwd))

@@ -16,7 +16,7 @@ import {
 } from 'electron'
 import { join } from 'path'
 import { openClawManager } from './openclaw'
-import { registerIpcHandlers } from './ipc'
+import { registerIpcHandlers, cleanupIpcListeners } from './ipc'
 import { createTray, destroyTray } from './tray'
 import { initAutoUpdater } from './updater'
 import { startWsProxy, stopWsProxy } from './wsproxy'
@@ -535,6 +535,7 @@ app.on('before-quit', async () => {
   offlineManager.destroy()
   await mcpRuntime.shutdownAll().catch(() => {})
   await codebaseIndexer.close().catch(() => {})
+  cleanupIpcListeners()
 
   // Shutdown Year 1-5 services
   try {
