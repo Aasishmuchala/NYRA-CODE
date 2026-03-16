@@ -445,34 +445,32 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // Enable/disable channels and test connections
   
   ipcMain.handle('openclaw:channel-enable', async (_e, channelId: string, config: Record<string, string>) => {
-    if (channelId === 'telegram' && config.botToken) {
-      const { telegramChannel } = require('./channels/telegram')
-      const result = await telegramChannel.start({ botToken: config.botToken })
+    const { CHANNEL_REGISTRY } = require('./channels')
+    const channel = CHANNEL_REGISTRY[channelId]
+    if (channel) {
+      const result = await channel.start(config)
       if (result.success) {
-        // Also persist to OpenClaw config
-        await gatewayRpc('config.patch', { raw: JSON.stringify({ channels: { telegram: { enabled: true, ...config } } }) })
+        await gatewayRpc('config.patch', { raw: JSON.stringify({ channels: { [channelId]: { enabled: true, ...config } } }) })
       }
       return result
     }
-    // For other channels, just persist config and let OpenClaw handle runtime
+    // Fallback for channels without local runtime (Matrix, IRC, etc.)
     await gatewayRpc('config.patch', { raw: JSON.stringify({ channels: { [channelId]: { enabled: true, ...config } } }) })
     return { success: true }
   })
 
   ipcMain.handle('openclaw:channel-disable', async (_e, channelId: string) => {
-    if (channelId === 'telegram') {
-      const { telegramChannel } = require('./channels/telegram')
-      await telegramChannel.stop()
-    }
+    const { CHANNEL_REGISTRY } = require('./channels')
+    const channel = CHANNEL_REGISTRY[channelId]
+    if (channel) await channel.stop()
     await gatewayRpc('config.patch', { raw: JSON.stringify({ channels: { [channelId]: { enabled: false } } }) })
     return { success: true }
   })
 
   ipcMain.handle('openclaw:channel-test', async (_e, channelId: string, config: Record<string, string>) => {
-    if (channelId === 'telegram' && config.botToken) {
-      const { telegramChannel } = require('./channels/telegram')
-      return await telegramChannel.testConnection(config.botToken)
-    }
+    const { CHANNEL_REGISTRY } = require('./channels')
+    const channel = CHANNEL_REGISTRY[channelId]
+    if (channel) return await channel.testConnection(config.botToken || config.appToken || '')
     return { success: false, error: `Test not implemented for ${channelId}` }
   })
 
