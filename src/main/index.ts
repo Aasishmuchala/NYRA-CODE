@@ -77,6 +77,34 @@ import { startupProfiler } from './startup-profiler'
 import { accessibilityManager } from './accessibility-manager'
 import { buildValidator } from './build-validator'
 
+// ── Year 1: Channel Router, Plugin Sandbox, NyraGuard, Telemetry ──────────────
+import { channelRouter } from './channels/channel-router'
+import { pluginSandbox } from './marketplace/plugin-sandbox'
+import { nyraGuard } from './marketplace/nyra-guard'
+import { telemetryService } from './telemetry'
+
+// ── Year 2: Collaboration, Voice, Model Router, Security Scanner ──────────────
+import { priorityQueue, sharedWorkspace, pipeline } from './agents/collaboration'
+import { voiceEngine } from './voice-engine'
+import { modelRouter } from './model-router-year2'
+import { securityScanner } from './marketplace/security-scanner'
+
+// ── Year 3: Enterprise — SSO/RBAC, Policy, Admin, Vertical Agents ────────────
+import { rbacManager, ssoProvider, teamManager } from './enterprise/sso-rbac'
+import { policyEngine } from './enterprise/policy-engine'
+import { adminConsole } from './enterprise/admin-console'
+import { verticalAgentManager } from './enterprise/vertical-agents'
+
+// ── Year 4: Platform — Self-improving, Cross-org, Mobile ──────────────────────
+import { proceduralMemory, feedbackLoop } from './platform/self-improving'
+import { crossOrgProtocol, agentMarketplace } from './platform/cross-org-protocol'
+import { mobileBridge } from './platform/mobile-bridge'
+
+// ── Year 5: OS Integration — Overlay, i18n, Agent Network ─────────────────────
+import { systemOverlay } from './os-integration/system-overlay'
+import { i18n } from './os-integration/i18n'
+import { agentNetwork } from './os-integration/agent-network'
+
 // ── Dark mode ─────────────────────────────────────────────────────────────────
 nativeTheme.themeSource = 'dark'
 
@@ -395,6 +423,65 @@ app.whenReady().then(async () => {
     accessibilityManager.init()
     buildValidator.init()
     console.log('[Main] Session 10 modules initialized (error-boundary, offline, startup-profiler, accessibility, build-validator)')
+
+    // ── Year 1: Channel Router, Plugin Sandbox, NyraGuard, Telemetry ────
+    try {
+      channelRouter.init?.()
+      pluginSandbox.init?.()
+      nyraGuard.init?.()
+      telemetryService.init?.()
+      console.log('[Main] Year 1 services initialized (channel-router, plugin-sandbox, nyra-guard, telemetry)')
+    } catch (err) {
+      console.warn('[Main] Year 1 services init error (non-fatal):', err)
+    }
+
+    // ── Year 2: Collaboration, Voice, Model Router, Security Scanner ────
+    try {
+      priorityQueue.init?.()
+      sharedWorkspace.init?.()
+      pipeline.init?.()
+      voiceEngine.init?.()
+      modelRouter.init?.()
+      securityScanner.init?.()
+      console.log('[Main] Year 2 services initialized (collaboration, voice-engine, model-router, security-scanner)')
+    } catch (err) {
+      console.warn('[Main] Year 2 services init error (non-fatal):', err)
+    }
+
+    // ── Year 3: Enterprise — SSO/RBAC, Policy, Admin, Vertical Agents ──
+    try {
+      rbacManager.init?.()
+      ssoProvider.init?.()
+      teamManager.init?.()
+      policyEngine.init?.()
+      adminConsole.init?.()
+      verticalAgentManager.init?.()
+      console.log('[Main] Year 3 services initialized (sso-rbac, policy-engine, admin-console, vertical-agents)')
+    } catch (err) {
+      console.warn('[Main] Year 3 services init error (non-fatal):', err)
+    }
+
+    // ── Year 4: Platform — Self-improving, Cross-org, Mobile ──────────
+    try {
+      proceduralMemory.init?.()
+      feedbackLoop.init?.()
+      crossOrgProtocol.init?.()
+      agentMarketplace.init?.()
+      mobileBridge.init?.()
+      console.log('[Main] Year 4 services initialized (self-improving, cross-org-protocol, mobile-bridge)')
+    } catch (err) {
+      console.warn('[Main] Year 4 services init error (non-fatal):', err)
+    }
+
+    // ── Year 5: OS Integration — Overlay, i18n, Agent Network ─────────
+    try {
+      systemOverlay.init?.()
+      i18n.init?.()
+      agentNetwork.init?.()
+      console.log('[Main] Year 5 services initialized (system-overlay, i18n, agent-network)')
+    } catch (err) {
+      console.warn('[Main] Year 5 services init error (non-fatal):', err)
+    }
   } catch (err) {
     console.warn('[Main] Memory Architecture init error (non-fatal):', err)
   }
@@ -448,6 +535,14 @@ app.on('before-quit', async () => {
   offlineManager.destroy()
   await mcpRuntime.shutdownAll().catch(() => {})
   await codebaseIndexer.close().catch(() => {})
+
+  // Shutdown Year 1-5 services
+  try {
+    pluginSandbox.shutdown?.()
+    telemetryService.shutdown?.()
+  } catch (err) {
+    console.warn('[Main] Year 1-5 services shutdown error (non-fatal):', err)
+  }
 
   // Persist working memory and end session before closing the database
   await memoryLifecycle.shutdown().catch((err) => {

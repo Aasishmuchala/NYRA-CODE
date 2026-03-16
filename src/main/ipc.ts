@@ -3,6 +3,26 @@
  * v2 — adds Projects, Prompts, Theme, text-write, ⌘K shortcut channel
  */
 import { ipcMain, shell, dialog, BrowserWindow, app, nativeTheme } from 'electron'
+
+// ── Year 1-5 Services ──────────────────────────────────────────────────────────
+import { channelRouter } from './channels/channel-router'
+import { pluginSandbox } from './marketplace/plugin-sandbox'
+import { nyraGuard } from './marketplace/nyra-guard'
+import { telemetryService } from './telemetry'
+import { priorityQueue, sharedWorkspace, pipeline } from './agents/collaboration'
+import { voiceEngine } from './voice-engine'
+import { modelRouter } from './model-router-year2'
+import { securityScanner } from './marketplace/security-scanner'
+import { rbacManager, ssoProvider, teamManager } from './enterprise/sso-rbac'
+import { policyEngine } from './enterprise/policy-engine'
+import { adminConsole } from './enterprise/admin-console'
+import { verticalAgentManager } from './enterprise/vertical-agents'
+import { proceduralMemory, feedbackLoop } from './platform/self-improving'
+import { crossOrgProtocol, agentMarketplace } from './platform/cross-org-protocol'
+import { mobileBridge } from './platform/mobile-bridge'
+import { systemOverlay } from './os-integration/system-overlay'
+import { i18n } from './os-integration/i18n'
+import { agentNetwork } from './os-integration/agent-network'
 import { openClawManager } from './openclaw'
 import { PROXY_WS_URL } from './wsproxy'
 import { listMcpServers, addMcpServer, removeMcpServer, McpServerConfig } from './mcp'
@@ -2356,6 +2376,274 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
   ipcMain.handle('build-validator:get', async (_e, id: string) => {
     try { return { success: true, result: buildValidator.getResult(id) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+
+  // ── Year 1: Channel Router ─────────────────────────────────────────────────────
+  ipcMain.handle('channelRouter:init', async (_e) => {
+    try { return { success: true, result: await channelRouter.init?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('channelRouter:routeMessage', async (_e, ...args) => {
+    try { return { success: true, result: await channelRouter.routeMessage?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('channelRouter:getActiveSessions', async (_e) => {
+    try { return { success: true, result: await channelRouter.getActiveSessions?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('channelRouter:clearStale', async (_e) => {
+    try { return { success: true, result: await channelRouter.clearStale?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+
+  // ── Year 1: Plugin Sandbox ─────────────────────────────────────────────────────
+  ipcMain.handle('pluginSandbox:createSandbox', async (_e, ...args) => {
+    try { return { success: true, result: await pluginSandbox.createSandbox(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('pluginSandbox:destroySandbox', async (_e, ...args) => {
+    try { return { success: true, result: await pluginSandbox.destroySandbox?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('pluginSandbox:listSandboxes', async (_e) => {
+    try { return { success: true, result: await pluginSandbox.listSandboxes?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('pluginSandbox:getSandboxStats', async (_e, ...args) => {
+    try { return { success: true, result: await pluginSandbox.getSandboxStats?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+
+  // ── Year 1: NyraGuard ──────────────────────────────────────────────────────────
+  ipcMain.handle('nyraGuard:scan', async (_e, ...args) => {
+    try { return { success: true, result: await nyraGuard.scan?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('nyraGuard:scanPlugin', async (_e, ...args) => {
+    try { return { success: true, result: await nyraGuard.scanPlugin(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('nyraGuard:getResults', async (_e) => {
+    try { return { success: true, result: await nyraGuard.getResults?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('nyraGuard:generateReport', async (_e, ...args) => {
+    try { return { success: true, result: await nyraGuard.generateReport?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+
+  // ── Year 1: Telemetry ──────────────────────────────────────────────────────────
+  ipcMain.handle('telemetry:init', async (_e) => {
+    try { return { success: true, result: await telemetryService.init?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('telemetry:track', async (_e, ...args) => {
+    try { return { success: true, result: await telemetryService.track?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('telemetry:getStats', async (_e) => {
+    try { return { success: true, result: await telemetryService.getStats?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('telemetry:setOptIn', async (_e, ...args) => {
+    try { return { success: true, result: await telemetryService.setOptIn?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+
+  // ── Year 2: Collaboration ─────────────────────────────────────────────────────
+  ipcMain.handle('priorityQueue:enqueue', async (_e, ...args) => {
+    try { return { success: true, result: await priorityQueue.enqueue?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('sharedWorkspace:addEntry', async (_e, ...args) => {
+    try { return { success: true, result: await sharedWorkspace.addEntry?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('pipeline:execute', async (_e, ...args) => {
+    try { return { success: true, result: await pipeline.execute?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+
+  // ── Year 2: Voice Engine ───────────────────────────────────────────────────────
+  ipcMain.handle('voiceEngine:init', async (_e) => {
+    try { return { success: true, result: await voiceEngine.init?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('voiceEngine:startRecording', async (_e) => {
+    try { return { success: true, result: await voiceEngine.startRecording?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('voiceEngine:stopRecording', async (_e) => {
+    try { return { success: true, result: await voiceEngine.stopRecording?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('voiceEngine:speak', async (_e, ...args) => {
+    try { return { success: true, result: await voiceEngine.speak?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('voiceEngine:getConfig', async (_e) => {
+    try { return { success: true, result: await voiceEngine.getConfig?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('voiceEngine:setConfig', async (_e, ...args) => {
+    try { return { success: true, result: await voiceEngine.setConfig?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+
+  // ── Year 2: Model Router ───────────────────────────────────────────────────────
+  ipcMain.handle('modelRouter:init', async (_e) => {
+    try { return { success: true, result: await modelRouter.init?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('modelRouter:route', async (_e, ...args) => {
+    try { return { success: true, result: await modelRouter.route(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('modelRouter:getStats', async (_e) => {
+    try { return { success: true, result: await modelRouter.getStats?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('modelRouter:addModel', async (_e, ...args) => {
+    try { return { success: true, result: await modelRouter.addModel?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('modelRouter:setBudget', async (_e, ...args) => {
+    try { return { success: true, result: await modelRouter.setBudget?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+
+  // ── Year 2: Security Scanner ───────────────────────────────────────────────────
+  ipcMain.handle('securityScanner:scanPlugin', async (_e, ...args) => {
+    try { return { success: true, result: await securityScanner.scanPlugin(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('securityScanner:getResults', async (_e) => {
+    try { return { success: true, result: await securityScanner.getResults?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+
+  // ── Year 3: SSO/RBAC ───────────────────────────────────────────────────────────
+  ipcMain.handle('rbacManager:init', async (_e) => {
+    try { return { success: true, result: await rbacManager.init?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('ssoProvider:authenticate', async (_e, ...args) => {
+    try { return { success: true, result: await ssoProvider.authenticate?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('teamManager:addTeam', async (_e, ...args) => {
+    try { return { success: true, result: await teamManager.addTeam?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+
+  // ── Year 3: Policy Engine ──────────────────────────────────────────────────────
+  ipcMain.handle('policyEngine:init', async (_e) => {
+    try { return { success: true, result: await policyEngine.init?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('policyEngine:evaluatePolicy', async (_e, ...args) => {
+    try { return { success: true, result: await policyEngine.evaluatePolicy?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+
+  // ── Year 3: Admin Console ──────────────────────────────────────────────────────
+  ipcMain.handle('adminConsole:init', async (_e) => {
+    try { return { success: true, result: await adminConsole.init?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('adminConsole:getDashboard', async (_e) => {
+    try { return { success: true, result: await adminConsole.getDashboard?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+
+  // ── Year 3: Vertical Agents ────────────────────────────────────────────────────
+  ipcMain.handle('verticalAgentManager:init', async (_e) => {
+    try { return { success: true, result: await verticalAgentManager.init?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('verticalAgentManager:registerPack', async (_e, ...args) => {
+    try { return { success: true, result: await verticalAgentManager.registerPack?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('verticalAgentManager:activatePack', async (_e, ...args) => {
+    try { return { success: true, result: await verticalAgentManager.activatePack?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+
+  // ── Year 4: Procedural Memory ──────────────────────────────────────────────────
+  ipcMain.handle('proceduralMemory:init', async (_e) => {
+    try { return { success: true, result: await proceduralMemory.init?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('proceduralMemory:learnFromExperience', async (_e, ...args) => {
+    try { return { success: true, result: await proceduralMemory.learnFromExperience?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+
+  // ── Year 4: Cross-org Protocol ─────────────────────────────────────────────────
+  ipcMain.handle('crossOrgProtocol:init', async (_e) => {
+    try { return { success: true, result: await crossOrgProtocol.init?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('crossOrgProtocol:shareAgent', async (_e, ...args) => {
+    try { return { success: true, result: await crossOrgProtocol.shareAgent?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+
+  // ── Year 4: Mobile Bridge ──────────────────────────────────────────────────────
+  ipcMain.handle('mobileBridge:init', async (_e) => {
+    try { return { success: true, result: await mobileBridge.init?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('mobileBridge:pairDevice', async (_e, ...args) => {
+    try { return { success: true, result: await mobileBridge.pairDevice?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('mobileBridge:sync', async (_e) => {
+    try { return { success: true, result: await mobileBridge.sync?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+
+  // ── Year 5: System Overlay ─────────────────────────────────────────────────────
+  ipcMain.handle('systemOverlay:init', async (_e) => {
+    try { return { success: true, result: await systemOverlay.init?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('systemOverlay:show', async (_e, ...args) => {
+    try { return { success: true, result: await systemOverlay.show?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('systemOverlay:hide', async (_e) => {
+    try { return { success: true, result: await systemOverlay.hide?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+
+  // ── Year 5: i18n ───────────────────────────────────────────────────────────────
+  ipcMain.handle('i18n:init', async (_e) => {
+    try { return { success: true, result: await i18n.init?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('i18n:translate', async (_e, ...args) => {
+    try { return { success: true, result: await i18n.translate?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('i18n:getLocales', async (_e) => {
+    try { return { success: true, result: await i18n.getLocales?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+
+  // ── Year 5: Agent Network ──────────────────────────────────────────────────────
+  ipcMain.handle('agentNetwork:init', async (_e) => {
+    try { return { success: true, result: await agentNetwork.init?.() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('agentNetwork:connectAgent', async (_e, ...args) => {
+    try { return { success: true, result: await agentNetwork.connectAgent?.(...args) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('agentNetwork:broadcastMessage', async (_e, ...args) => {
+    try { return { success: true, result: await agentNetwork.broadcastMessage?.(...args) } }
     catch (err: any) { return { success: false, error: err.message } }
   })
 

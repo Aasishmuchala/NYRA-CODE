@@ -1462,6 +1462,148 @@ const nyraApi = {
     history:      (limit?: number): Promise<any>                  => ipcRenderer.invoke('build-validator:history', limit),
     get:          (id: string): Promise<any>                      => ipcRenderer.invoke('build-validator:get', id),
   },
+
+  // ── Year 1: Channel Router ──────────────────────────────────────────────────
+  channelRouter: {
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('channelRouter:init'),
+    routeMessage:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('channelRouter:routeMessage', ...args),
+    getActiveSessions:      (): Promise<any>                      => ipcRenderer.invoke('channelRouter:getActiveSessions'),
+    clearStale:             (): Promise<any>                      => ipcRenderer.invoke('channelRouter:clearStale'),
+  },
+
+  // ── Year 1: Plugin Sandbox ──────────────────────────────────────────────────
+  pluginSandbox: {
+    createSandbox:          (...args: any[]): Promise<any>        => ipcRenderer.invoke('pluginSandbox:createSandbox', ...args),
+    destroySandbox:         (...args: any[]): Promise<any>        => ipcRenderer.invoke('pluginSandbox:destroySandbox', ...args),
+    listSandboxes:          (): Promise<any>                      => ipcRenderer.invoke('pluginSandbox:listSandboxes'),
+    getSandboxStats:        (...args: any[]): Promise<any>        => ipcRenderer.invoke('pluginSandbox:getSandboxStats', ...args),
+  },
+
+  // ── Year 1: NyraGuard ──────────────────────────────────────────────────────
+  nyraGuard: {
+    scan:                   (...args: any[]): Promise<any>        => ipcRenderer.invoke('nyraGuard:scan', ...args),
+    scanPlugin:             (...args: any[]): Promise<any>        => ipcRenderer.invoke('nyraGuard:scanPlugin', ...args),
+    getResults:             (): Promise<any>                      => ipcRenderer.invoke('nyraGuard:getResults'),
+    generateReport:         (...args: any[]): Promise<any>        => ipcRenderer.invoke('nyraGuard:generateReport', ...args),
+  },
+
+  // ── Year 1: Telemetry ──────────────────────────────────────────────────────
+  telemetry: {
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('telemetry:init'),
+    track:                  (...args: any[]): Promise<any>        => ipcRenderer.invoke('telemetry:track', ...args),
+    getStats:               (): Promise<any>                      => ipcRenderer.invoke('telemetry:getStats'),
+    setOptIn:               (...args: any[]): Promise<any>        => ipcRenderer.invoke('telemetry:setOptIn', ...args),
+  },
+
+  // ── Year 2: Collaboration ──────────────────────────────────────────────────
+  priorityQueue: {
+    enqueue:                (...args: any[]): Promise<any>        => ipcRenderer.invoke('priorityQueue:enqueue', ...args),
+  },
+
+  sharedWorkspace: {
+    addEntry:               (...args: any[]): Promise<any>        => ipcRenderer.invoke('sharedWorkspace:addEntry', ...args),
+  },
+
+  pipeline: {
+    execute:                (...args: any[]): Promise<any>        => ipcRenderer.invoke('pipeline:execute', ...args),
+  },
+
+  // ── Year 2: Voice Engine ───────────────────────────────────────────────────
+  voiceEngine: {
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('voiceEngine:init'),
+    startRecording:         (): Promise<any>                      => ipcRenderer.invoke('voiceEngine:startRecording'),
+    stopRecording:          (): Promise<any>                      => ipcRenderer.invoke('voiceEngine:stopRecording'),
+    speak:                  (...args: any[]): Promise<any>        => ipcRenderer.invoke('voiceEngine:speak', ...args),
+    getConfig:              (): Promise<any>                      => ipcRenderer.invoke('voiceEngine:getConfig'),
+    setConfig:              (...args: any[]): Promise<any>        => ipcRenderer.invoke('voiceEngine:setConfig', ...args),
+  },
+
+  // ── Year 2: Model Router ───────────────────────────────────────────────────
+  modelRouter: {
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('modelRouter:init'),
+    route:                  (...args: any[]): Promise<any>        => ipcRenderer.invoke('modelRouter:route', ...args),
+    getStats:               (): Promise<any>                      => ipcRenderer.invoke('modelRouter:getStats'),
+    addModel:               (...args: any[]): Promise<any>        => ipcRenderer.invoke('modelRouter:addModel', ...args),
+    setBudget:              (...args: any[]): Promise<any>        => ipcRenderer.invoke('modelRouter:setBudget', ...args),
+  },
+
+  // ── Year 2: Security Scanner ───────────────────────────────────────────────
+  securityScanner: {
+    scanPlugin:             (...args: any[]): Promise<any>        => ipcRenderer.invoke('securityScanner:scanPlugin', ...args),
+    getResults:             (): Promise<any>                      => ipcRenderer.invoke('securityScanner:getResults'),
+  },
+
+  // ── Year 3: SSO/RBAC ───────────────────────────────────────────────────────
+  rbacManager: {
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('rbacManager:init'),
+  },
+
+  ssoProvider: {
+    authenticate:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('ssoProvider:authenticate', ...args),
+  },
+
+  teamManager: {
+    addTeam:                (...args: any[]): Promise<any>        => ipcRenderer.invoke('teamManager:addTeam', ...args),
+  },
+
+  // ── Year 3: Policy Engine ──────────────────────────────────────────────────
+  policyEngine: {
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('policyEngine:init'),
+    evaluatePolicy:         (...args: any[]): Promise<any>        => ipcRenderer.invoke('policyEngine:evaluatePolicy', ...args),
+  },
+
+  // ── Year 3: Admin Console ──────────────────────────────────────────────────
+  adminConsole: {
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('adminConsole:init'),
+    getDashboard:           (): Promise<any>                      => ipcRenderer.invoke('adminConsole:getDashboard'),
+  },
+
+  // ── Year 3: Vertical Agents ────────────────────────────────────────────────
+  verticalAgentManager: {
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('verticalAgentManager:init'),
+    registerPack:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('verticalAgentManager:registerPack', ...args),
+    activatePack:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('verticalAgentManager:activatePack', ...args),
+  },
+
+  // ── Year 4: Procedural Memory ──────────────────────────────────────────────
+  proceduralMemory: {
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('proceduralMemory:init'),
+    learnFromExperience:    (...args: any[]): Promise<any>        => ipcRenderer.invoke('proceduralMemory:learnFromExperience', ...args),
+  },
+
+  // ── Year 4: Cross-org Protocol ─────────────────────────────────────────────
+  crossOrgProtocol: {
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('crossOrgProtocol:init'),
+    shareAgent:             (...args: any[]): Promise<any>        => ipcRenderer.invoke('crossOrgProtocol:shareAgent', ...args),
+  },
+
+  // ── Year 4: Mobile Bridge ──────────────────────────────────────────────────
+  mobileBridge: {
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('mobileBridge:init'),
+    pairDevice:             (...args: any[]): Promise<any>        => ipcRenderer.invoke('mobileBridge:pairDevice', ...args),
+    sync:                   (): Promise<any>                      => ipcRenderer.invoke('mobileBridge:sync'),
+  },
+
+  // ── Year 5: System Overlay ─────────────────────────────────────────────────
+  systemOverlay: {
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('systemOverlay:init'),
+    show:                   (...args: any[]): Promise<any>        => ipcRenderer.invoke('systemOverlay:show', ...args),
+    hide:                   (): Promise<any>                      => ipcRenderer.invoke('systemOverlay:hide'),
+  },
+
+  // ── Year 5: i18n ───────────────────────────────────────────────────────────
+  i18n: {
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('i18n:init'),
+    translate:              (...args: any[]): Promise<any>        => ipcRenderer.invoke('i18n:translate', ...args),
+    getLocales:             (): Promise<any>                      => ipcRenderer.invoke('i18n:getLocales'),
+  },
+
+  // ── Year 5: Agent Network ──────────────────────────────────────────────────
+  agentNetwork: {
+    init:                   (): Promise<any>                      => ipcRenderer.invoke('agentNetwork:init'),
+    connectAgent:           (...args: any[]): Promise<any>        => ipcRenderer.invoke('agentNetwork:connectAgent', ...args),
+    broadcastMessage:       (...args: any[]): Promise<any>        => ipcRenderer.invoke('agentNetwork:broadcastMessage', ...args),
+  },
 }
 
 contextBridge.exposeInMainWorld('nyra', nyraApi)
