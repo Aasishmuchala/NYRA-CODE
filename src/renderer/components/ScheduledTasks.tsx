@@ -106,14 +106,15 @@ export const ScheduledTasks: React.FC<Props> = ({ onClose }) => {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-[560px] max-h-[80vh] flex flex-col bg-[#111111] border border-white/10 rounded-2xl shadow-2xl shadow-black/80 overflow-hidden">
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+         onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="w-[560px] max-h-[80vh] flex flex-col bg-nyra-surface border border-nyra-border rounded-2xl shadow-2xl flex flex-col overflow-hidden">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
-          <div className="flex items-center gap-2.5">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.06]">
+          <div className="flex items-center gap-3">
             <Clock size={16} className="text-terra-400" />
-            <span className="text-white/90 text-sm font-semibold">Scheduled Tasks</span>
+            <span className="text-sm font-semibold text-white/80">Scheduled Tasks</span>
             {tasks.length > 0 && (
               <span className="bg-white/10 text-white/50 text-[10px] px-1.5 py-0.5 rounded-full font-medium">
                 {tasks.length}
@@ -166,7 +167,7 @@ export const ScheduledTasks: React.FC<Props> = ({ onClose }) => {
                   <button
                     onClick={() => runNow(task)}
                     title="Run now"
-                    className="p-1.5 text-white/20 hover:text-green-400 transition-colors"
+                    className="p-1.5 text-white/20 hover:text-sage-300 transition-colors"
                   >
                     <Play size={13} />
                   </button>
@@ -178,7 +179,7 @@ export const ScheduledTasks: React.FC<Props> = ({ onClose }) => {
                   </button>
                   <button
                     onClick={() => remove(task.id)}
-                    className="p-1.5 text-white/20 hover:text-red-400 transition-colors"
+                    className="p-1.5 text-white/20 hover:text-blush-300 transition-colors"
                   >
                     <Trash2 size={13} />
                   </button>

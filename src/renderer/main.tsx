@@ -1,3 +1,6 @@
+// Load browser shim if running outside Electron (standalone Vite dev server)
+import './browser-shim'
+
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'

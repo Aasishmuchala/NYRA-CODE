@@ -64,7 +64,7 @@ export const BootSplash: React.FC<Props> = ({ status, log, onRetry }) => {
           {!isError && status !== 'ready' && status !== 'running' && (
             <Loader2 size={14} className="text-terra-400 animate-spin flex-shrink-0" />
           )}
-          <span className={`text-sm ${isError ? 'text-red-400' : 'text-white/50'}`}>
+          <span className={`text-sm ${isError ? 'text-blush-300' : 'text-white/50'}`}>
             {statusMessages[status] ?? status}
           </span>
         </div>

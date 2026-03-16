@@ -20,10 +20,62 @@ import { registerIpcHandlers } from './ipc'
 import { createTray, destroyTray } from './tray'
 import { initAutoUpdater } from './updater'
 import { startWsProxy, stopWsProxy } from './wsproxy'
-import { syncProvidersToOpenClaw } from './providers'
+import { syncProvidersToOpenClaw, saveApiKey } from './providers'
+import { syncBackRefreshedTokens } from './auth-profiles'
+import { syncOllamaToOpenClaw } from './ollama'
 import { memoryManager } from './memory'
 import { ptyManager } from './pty'
 import { codebaseIndexer } from './indexer'
+import { mcpRuntime } from './mcp-runtime'
+
+// ── Phase 1.1: Provider Abstraction Layer ────────────────────────────────────
+import { providerRegistry } from './providers/provider-registry'
+import { OpenAIProvider } from './providers/openai-provider'
+import { AnthropicProvider } from './providers/anthropic-provider'
+import { OllamaProvider } from './providers/ollama-provider'
+import { loadApiKey } from './providers'
+
+// ── Phase 1.3: Custom Agent Framework ────────────────────────────────────────
+import { agentManager } from './agents/agent-manager'
+
+// ── Phase 2: Intelligence Modules ────────────────────────────────────────────
+import { memoryArchitect } from './memory/memory-architecture'
+import { memoryLifecycle } from './memory/memory-lifecycle'
+import { registerSemanticTier } from './memory/semantic-adapter'
+import { branchManager } from './conversation-branching'
+import { agentAnalytics } from './agent-analytics'
+import { notificationCenter } from './notification-center'
+import { contextVisualizer } from './context-visualizer'
+import { pluginStudio } from './plugin-studio'
+import { promptLibraryStore } from './prompt-library-store'
+import { taskBoard } from './task-board'
+import { apiPlayground } from './api-playground'
+import { performanceProfiler } from './performance-profiler'
+import { voiceInterface } from './voice-interface'
+import { fileAttachment } from './file-attachment'
+import { diffViewer } from './diff-viewer'
+import { abPromptTesting } from './ab-prompt-testing'
+import { themeEngine } from './theme-engine'
+import { reasoningEngine } from './reasoning/reasoning-engine'
+import { ensembleEngine } from './ensemble/ensemble-engine'
+
+// ── Session 8: Search & Activity ────────────────────────────────────────────
+import { globalSearch } from './global-search'
+import { activityFeed } from './activity-feed'
+
+// ── Session 9: Export, Reports, Webhooks, Backup, Sharing ───────────────────
+import { workspaceExport } from './workspace-export'
+import { reportGenerator } from './report-generator'
+import { webhookManager } from './webhook-manager'
+import { backupManager } from './backup-manager'
+import { sessionSharing } from './session-sharing'
+
+// ── Session 10: Error, Offline, Startup, Accessibility, Validator ───────────
+import { errorBoundaryManager } from './error-boundary-manager'
+import { offlineManager } from './offline-manager'
+import { startupProfiler } from './startup-profiler'
+import { accessibilityManager } from './accessibility-manager'
+import { buildValidator } from './build-validator'
 
 // ── Dark mode ─────────────────────────────────────────────────────────────────
 nativeTheme.themeSource = 'dark'
@@ -50,6 +102,11 @@ const ZOOM_MAX  = 2.0
 
 // ── Window factory ────────────────────────────────────────────────────────────
 function createWindow(): BrowserWindow {
+  // On Windows/Linux the icon must be set at runtime (macOS uses the .icns from the bundle)
+  const iconPath = process.platform !== 'darwin'
+    ? join(__dirname, '../../resources/icon.png')
+    : undefined
+
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -57,6 +114,7 @@ function createWindow(): BrowserWindow {
     minHeight: 600,
     show: false,
     frame: false,
+    ...(iconPath ? { icon: iconPath } : {}),
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
     trafficLightPosition: { x: 18, y: 14 },
     backgroundColor: '#0c0c0c',
@@ -212,6 +270,30 @@ app.whenReady().then(async () => {
     installUpdate()
   })
 
+  // ── Content Security Policy ──────────────────────────────────────────────────
+  // Restrict what the renderer can load to prevent injection attacks.
+  win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          [
+            "default-src 'self'",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'",  // React needs eval in dev
+            "style-src 'self' 'unsafe-inline'",                 // Tailwind uses inline styles
+            "img-src 'self' data: blob: https:",                // Allow images from HTTPS + data URIs
+            "font-src 'self' data:",                            // Local fonts + data URIs
+            "connect-src 'self' ws://127.0.0.1:* http://127.0.0.1:* https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com https://api.github.com https://api.telegram.org",
+            "object-src 'none'",                                // No plugins/embeds
+            "base-uri 'self'",
+            "form-action 'self'",
+            "frame-ancestors 'none'",
+          ].join('; ')
+        ],
+      },
+    })
+  })
+
   // NOTE: session.webRequest.onBeforeSendHeaders does NOT intercept WebSocket
   // upgrade requests in Electron 29. Origin rewriting for WS is handled by
   // the local WsProxy (wsproxy.ts) started above instead.
@@ -219,8 +301,110 @@ app.whenReady().then(async () => {
   // Initialize persistent memory database
   memoryManager.init()
 
+  // ── Phase 1.1: Initialize Provider Abstraction Layer ──────────────────────
+  // Register direct API providers (bypasses wsproxy for direct LLM calls)
+  try {
+    const openaiKey = loadApiKey('openai')
+    if (openaiKey) {
+      const openai = new OpenAIProvider({ apiKey: openaiKey })
+      await openai.initialize()
+      providerRegistry.register(openai)
+      console.log('[Main] OpenAI provider registered (direct API)')
+    }
+
+    const anthropicKey = loadApiKey('anthropic')
+    if (anthropicKey) {
+      const anthropic = new AnthropicProvider({ apiKey: anthropicKey })
+      await anthropic.initialize()
+      providerRegistry.register(anthropic)
+      console.log('[Main] Anthropic provider registered (direct API)')
+    }
+
+    // Ollama is always registered (local, no API key needed)
+    const ollama = new OllamaProvider({})
+    await ollama.initialize()
+    providerRegistry.register(ollama)
+    console.log('[Main] Ollama provider registered (local)')
+
+    // Start health monitoring (check every 60s)
+    providerRegistry.startHealthMonitor(60_000)
+    console.log('[Main] Provider registry initialized with', providerRegistry.getAll().length, 'providers')
+  } catch (err) {
+    console.warn('[Main] Provider registry init error (non-fatal, wsproxy fallback active):', err)
+  }
+
+  // ── Phase 1.3: Initialize Custom Agent Framework ──────────────────────────
+  try {
+    agentManager.initialize()
+    console.log('[Main] Custom Agent Framework initialized')
+  } catch (err) {
+    console.warn('[Main] Agent manager init error (non-fatal):', err)
+  }
+
+  // ── Phase 2: Initialize Intelligence Modules ──────────────────────────────
+  try {
+    await memoryArchitect.init()
+    registerSemanticTier()
+    memoryArchitect.startCompaction()
+    console.log('[Main] Phase 2 Memory Architecture initialized (5-tier + compaction)')
+
+    // Initialize cross-session memory persistence
+    await memoryLifecycle.init()
+    const restored = await memoryLifecycle.restoreSnapshot()
+    console.log(`[Main] Memory lifecycle ready — snapshot ${restored ? 'restored' : 'none found (fresh start)'}`)
+
+    // Initialize Session 5 modules
+    branchManager.init()
+    agentAnalytics.init()
+    notificationCenter.init()
+    contextVisualizer.init()
+    console.log('[Main] Session 5 modules initialized (branching, analytics, notifications, context-viz)')
+
+    // Initialize Session 6 modules
+    pluginStudio.init()
+    promptLibraryStore.init()
+    taskBoard.init()
+    apiPlayground.init()
+    performanceProfiler.init()
+    console.log('[Main] Session 6 modules initialized (plugin-studio, prompt-lib, task-board, api-playground, perf-profiler)')
+
+    voiceInterface.init()
+    fileAttachment.init()
+    diffViewer.init()
+    abPromptTesting.init()
+    themeEngine.init()
+    console.log('[Main] Session 7 modules initialized (voice, file-attachment, diff-viewer, ab-testing, theme-engine)')
+
+    // Initialize Session 8 modules
+    globalSearch.init()
+    activityFeed.init()
+    console.log('[Main] Session 8 modules initialized (global-search, activity-feed)')
+
+    // Initialize Session 9 modules
+    workspaceExport.init()
+    reportGenerator.init()
+    webhookManager.init()
+    backupManager.init()
+    sessionSharing.init()
+    console.log('[Main] Session 9 modules initialized (workspace-export, report-gen, webhooks, backup, session-sharing)')
+
+    // Initialize Session 10 modules
+    errorBoundaryManager.init()
+    offlineManager.init()
+    startupProfiler.init()
+    accessibilityManager.init()
+    buildValidator.init()
+    console.log('[Main] Session 10 modules initialized (error-boundary, offline, startup-profiler, accessibility, build-validator)')
+  } catch (err) {
+    console.warn('[Main] Memory Architecture init error (non-fatal):', err)
+  }
+
   // Sync stored API keys → OpenClaw auth-profiles before gateway starts
   syncProvidersToOpenClaw()
+  // Also sync Ollama models (fire-and-forget, non-blocking)
+  syncOllamaToOpenClaw().catch(err => {
+    console.log('[Main] Ollama sync skipped (may not be running):', err?.message || err)
+  })
 
   openClawManager.initialize().catch((err) => {
     console.error('[Main] OpenClaw init error:', err)
@@ -251,8 +435,25 @@ app.on('activate', () => {
 app.on('before-quit', async () => {
   ;(app as typeof app & { isQuitting: boolean }).isQuitting = true
   globalShortcut.unregisterAll()
+
+  // Sync-back any OAuth tokens that OpenClaw may have refreshed during this session.
+  // This ensures refreshed tokens survive app restarts (saved to encrypted keychain).
+  try {
+    syncBackRefreshedTokens((providerId, key) => saveApiKey(providerId, key))
+  } catch (err) {
+    console.warn('[Main] Token sync-back failed (non-fatal):', err)
+  }
+
   ptyManager.killAll()
+  offlineManager.destroy()
+  await mcpRuntime.shutdownAll().catch(() => {})
   await codebaseIndexer.close().catch(() => {})
+
+  // Persist working memory and end session before closing the database
+  await memoryLifecycle.shutdown().catch((err) => {
+    console.warn('[Main] Memory lifecycle shutdown error (non-fatal):', err)
+  })
+
   memoryManager.close()
   openClawManager.shutdown()
   stopWsProxy()

@@ -251,10 +251,10 @@ export const GitPanel: React.FC<Props> = ({ visible, onClose }) => {
 
   // ── Get status badge ───────────────────────────────────────────────────────
   const getStatusBadge = (file: string): { type: 'M' | 'A' | 'D' | '?'; color: string } => {
-    if (status?.staged.includes(file)) return { type: 'A', color: 'bg-green-500/20 text-green-400' }
-    if (status?.modified.includes(file)) return { type: 'M', color: 'bg-yellow-500/20 text-yellow-400' }
-    if (status?.added.includes(file)) return { type: 'A', color: 'bg-blue-500/20 text-blue-400' }
-    if (status?.deleted.includes(file)) return { type: 'D', color: 'bg-red-500/20 text-red-400' }
+    if (status?.staged.includes(file)) return { type: 'A', color: 'bg-sage-400/20 text-sage-300' }
+    if (status?.modified.includes(file)) return { type: 'M', color: 'bg-gold-400/20 text-gold-300' }
+    if (status?.added.includes(file)) return { type: 'A', color: 'bg-terra-400/20 text-terra-300' }
+    if (status?.deleted.includes(file)) return { type: 'D', color: 'bg-blush-400/20 text-blush-300' }
     return { type: '?', color: 'bg-white/10 text-white/50' }
   }
 
@@ -381,7 +381,7 @@ export const GitPanel: React.FC<Props> = ({ visible, onClose }) => {
                             onClick={() => handleStageFile(file)}
                             className={`p-1 rounded transition-colors ${
                               isStaged
-                                ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+                                ? 'bg-sage-400/20 text-sage-300 hover:bg-sage-400/30'
                                 : 'text-white/30 hover:text-white/60 hover:bg-white/5'
                             }`}
                             title={isStaged ? 'Unstage' : 'Stage'}
@@ -402,9 +402,9 @@ export const GitPanel: React.FC<Props> = ({ visible, onClose }) => {
                                     key={i}
                                     className={`${
                                       line.startsWith('+') && !line.startsWith('+++')
-                                        ? 'text-green-400'
+                                        ? 'text-sage-300'
                                         : line.startsWith('-') && !line.startsWith('---')
-                                        ? 'text-red-400'
+                                        ? 'text-blush-300'
                                         : 'text-white/50'
                                     }`}
                                   >
@@ -495,9 +495,9 @@ export const GitPanel: React.FC<Props> = ({ visible, onClose }) => {
                                   key={i}
                                   className={`${
                                     line.startsWith('+') && !line.startsWith('+++')
-                                      ? 'text-green-400'
+                                      ? 'text-sage-300'
                                       : line.startsWith('-') && !line.startsWith('---')
-                                      ? 'text-red-400'
+                                      ? 'text-blush-300'
                                       : 'text-white/50'
                                   }`}
                                 >

@@ -1,22 +1,38 @@
-import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
 
+// Try to load better-sqlite3; it requires native compilation for Electron's ABI
+let DatabaseConstructor: typeof import('better-sqlite3') | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  DatabaseConstructor = require('better-sqlite3');
+  console.log('[Memory] better-sqlite3 loaded successfully');
+} catch (err) {
+  console.warn('[Memory] better-sqlite3 not available — memory features disabled. Run `npx @electron/rebuild` to fix.');
+}
+
 class MemoryManager {
-  private db: Database.Database | null = null;
+  private db: any | null = null;
+  auditLog: any[] = [];
+  fileSnapshots: Map<string, any> = new Map();
 
   /**
    * Initialize the memory system
    * Opens/creates the SQLite database and ensures schema is set up
    */
   init(): void {
+    if (!DatabaseConstructor) {
+      console.warn('[Memory] Skipping init — better-sqlite3 not available');
+      return;
+    }
+
     try {
       const userDataPath = app.getPath('userData');
       const dbPath = path.join(userDataPath, 'memory.db');
 
       // Create Database instance
-      this.db = new Database(dbPath);
+      this.db = new (DatabaseConstructor as any)(dbPath);
 
       // Set secure file permissions (Unix-like systems)
       try {
@@ -93,6 +109,146 @@ class MemoryManager {
           updated_at INTEGER DEFAULT (unixepoch()),
           UNIQUE(project_id, key)
         );
+
+        CREATE TABLE IF NOT EXISTS tasks (
+          id TEXT PRIMARY KEY,
+          project_id TEXT,
+          title TEXT NOT NULL,
+          description TEXT,
+          status TEXT NOT NULL DEFAULT 'intake',
+          priority INTEGER DEFAULT 0,
+          mode TEXT DEFAULT 'solo',
+          model TEXT,
+          folder_scope TEXT,
+          created_at INTEGER NOT NULL,
+          started_at INTEGER,
+          completed_at INTEGER,
+          error TEXT,
+          summary TEXT,
+          parent_task TEXT,
+          assigned_agent TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS task_events (
+          id TEXT PRIMARY KEY,
+          task_id TEXT NOT NULL,
+          event_type TEXT NOT NULL,
+          agent_id TEXT,
+          data TEXT,
+          timestamp INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS task_artifacts (
+          id TEXT PRIMARY KEY,
+          task_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          type TEXT,
+          path TEXT,
+          content TEXT,
+          created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS task_approvals (
+          id TEXT PRIMARY KEY,
+          task_id TEXT NOT NULL,
+          agent_id TEXT,
+          action_type TEXT NOT NULL,
+          description TEXT NOT NULL,
+          details TEXT,
+          status TEXT DEFAULT 'pending',
+          dry_run_output TEXT,
+          responded_at INTEGER,
+          created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS agents (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          role TEXT NOT NULL,
+          description TEXT,
+          model TEXT,
+          tools TEXT,
+          folder_access TEXT,
+          instructions TEXT,
+          status TEXT DEFAULT 'idle',
+          created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS agent_runs (
+          id TEXT PRIMARY KEY,
+          agent_id TEXT NOT NULL,
+          task_id TEXT NOT NULL,
+          status TEXT DEFAULT 'running',
+          input TEXT,
+          output TEXT,
+          model_used TEXT,
+          tokens_in INTEGER,
+          tokens_out INTEGER,
+          started_at INTEGER NOT NULL,
+          completed_at INTEGER
+        );
+
+        CREATE TABLE IF NOT EXISTS agent_handoffs (
+          id TEXT PRIMARY KEY,
+          from_agent TEXT NOT NULL,
+          to_agent TEXT NOT NULL,
+          task_id TEXT NOT NULL,
+          summary TEXT,
+          timestamp INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS folders (
+          id TEXT PRIMARY KEY,
+          project_id TEXT,
+          path TEXT NOT NULL,
+          label TEXT,
+          access_level TEXT DEFAULT 'read_only',
+          is_active INTEGER DEFAULT 1,
+          added_at INTEGER NOT NULL,
+          last_ai_access INTEGER
+        );
+
+        CREATE TABLE IF NOT EXISTS folder_instructions (
+          id TEXT PRIMARY KEY,
+          folder_id TEXT NOT NULL,
+          instruction TEXT NOT NULL,
+          priority INTEGER DEFAULT 0,
+          created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS context_sources (
+          id TEXT PRIMARY KEY,
+          project_id TEXT,
+          type TEXT NOT NULL,
+          label TEXT,
+          content TEXT NOT NULL,
+          token_estimate INTEGER,
+          pinned INTEGER DEFAULT 0,
+          active INTEGER DEFAULT 1,
+          created_at INTEGER NOT NULL,
+          expires_at INTEGER
+        );
+
+        CREATE TABLE IF NOT EXISTS audit_log (
+          id TEXT PRIMARY KEY,
+          task_id TEXT,
+          agent_id TEXT,
+          action TEXT NOT NULL,
+          target TEXT,
+          details TEXT,
+          reversible INTEGER DEFAULT 0,
+          snapshot_id TEXT,
+          timestamp INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS file_snapshots (
+          id TEXT PRIMARY KEY,
+          file_path TEXT NOT NULL,
+          content_hash TEXT,
+          content BLOB,
+          task_id TEXT,
+          created_at INTEGER NOT NULL
+        );
       `);
     } catch (err) {
       console.error('[Memory] Error creating tables:', err);
@@ -111,6 +267,15 @@ class MemoryManager {
         CREATE INDEX IF NOT EXISTS idx_facts_category_key ON facts(category, key);
         CREATE INDEX IF NOT EXISTS idx_summaries_session_id ON summaries(session_id);
         CREATE INDEX IF NOT EXISTS idx_project_context_project_id ON project_context(project_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+        CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id);
+        CREATE INDEX IF NOT EXISTS idx_task_approvals_status ON task_approvals(status);
+        CREATE INDEX IF NOT EXISTS idx_agent_runs_task ON agent_runs(task_id);
+        CREATE INDEX IF NOT EXISTS idx_audit_log_task ON audit_log(task_id);
+        CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_folders_project ON folders(project_id);
+        CREATE INDEX IF NOT EXISTS idx_context_sources_project ON context_sources(project_id);
       `);
     } catch (err) {
       console.error('[Memory] Error creating indexes:', err);
@@ -486,6 +651,57 @@ class MemoryManager {
   }
 
   /**
+   * Generic query helper for the new tables - returns all matching rows
+   */
+  queryAll(sql: string, params?: any[]): any[] {
+    if (!this.db) return [];
+
+    try {
+      const stmt = this.db.prepare(sql);
+      return stmt.all(...(params ?? [])) as any[];
+    } catch (err) {
+      console.error('[Memory] Error in queryAll:', err);
+      return [];
+    }
+  }
+
+  /**
+   * Generic query helper for the new tables - returns single row
+   */
+  queryOne(sql: string, params?: any[]): any {
+    if (!this.db) return null;
+
+    try {
+      const stmt = this.db.prepare(sql);
+      return stmt.get(...(params ?? [])) as any;
+    } catch (err) {
+      console.error('[Memory] Error in queryOne:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Generic run helper for the new tables - executes insert/update/delete
+   */
+  run(sql: string, params?: any[]): { changes: number; lastInsertRowid: number } {
+    if (!this.db) {
+      return { changes: 0, lastInsertRowid: 0 };
+    }
+
+    try {
+      const stmt = this.db.prepare(sql);
+      const result = stmt.run(...(params ?? [])) as any;
+      return {
+        changes: result.changes ?? 0,
+        lastInsertRowid: result.lastInsertRowid ?? 0,
+      };
+    } catch (err) {
+      console.error('[Memory] Error in run:', err);
+      return { changes: 0, lastInsertRowid: 0 };
+    }
+  }
+
+  /**
    * Get database statistics
    */
   stats(): {
@@ -543,5 +759,7 @@ class MemoryManager {
 // Create and export singleton instance
 const memoryManager = new MemoryManager();
 
-export { memoryManager, MemoryManager };
+// `memory` alias used by Cowork modules (task-manager, audit-log, etc.)
+const memory = memoryManager;
+export { memoryManager, memory, MemoryManager };
 export default memoryManager;

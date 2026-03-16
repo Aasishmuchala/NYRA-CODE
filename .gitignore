@@ -44,6 +44,20 @@ coverage/
 .Trashes
 ehthumbs.db
 
+# Electron-vite temp build artifacts
+electron.vite.config.*.mjs
+electron.vite.config.d.ts
+electron.vite.config.js
+
+# Compiled JS/DTS duplicates (source is .ts)
+src/**/*.js
+src/**/*.d.ts
+!src/**/*.test.js
+
+# Playwright
+test-results/
+playwright-report/
+
 # Credentials (never commit)
 auth-profiles.json
 *.pem

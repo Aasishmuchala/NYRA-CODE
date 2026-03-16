@@ -51,8 +51,8 @@ export const NotificationBanner: React.FC = () => {
   if (banners.length === 0) return null
 
   const icons = { info: Bell, update: Download, error: AlertCircle }
-  const colors = { info: 'border-white/10', update: 'border-terra-400/40', error: 'border-red-500/40' }
-  const iconColors = { info: 'text-white/50', update: 'text-terra-400', error: 'text-red-400' }
+  const colors = { info: 'border-white/10', update: 'border-terra-400/40', error: 'border-blush-400/40' }
+  const iconColors = { info: 'text-white/50', update: 'text-terra-400', error: 'text-blush-300' }
 
   return (
     <div className="fixed top-10 right-4 z-50 flex flex-col gap-2 max-w-xs">

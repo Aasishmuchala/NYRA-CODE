@@ -8,10 +8,17 @@
  */
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import {
-  Plus, Search, Settings, Cpu, X, Clock, Moon,
+  Plus, Search, Settings, Cpu, X, Clock, Moon, Monitor,
   Loader2, AlertTriangle, RefreshCw, BookOpen,
   Download, GitBranch, Hash, Pin, MoreHorizontal,
-  Trash2, Terminal, GitCommitHorizontal,
+  Trash2, Terminal, GitCommitHorizontal, Brain, Database, Layers, Users,
+  MessageSquare, Activity, Wifi, Share2,
+  GitFork, BarChart3, Bell, FolderSearch, Gauge,
+  Package, BookMarked, LayoutGrid, PlayCircle, Timer,
+  Mic, Paperclip, GitCompare, FlaskConical, Palette,
+  SearchCode, Rss, FileArchive, FileText, Webhook, DatabaseBackup,
+  Share, Bug, WifiOff, Zap, Accessibility, ShieldCheck, ChevronDown,
+  Globe, Trophy,
 } from 'lucide-react'
 
 import { useOpenClaw } from './hooks/useOpenClaw'
@@ -23,10 +30,10 @@ import { ChatInput }           from './components/ChatInput'
 import { SettingsPanel }       from './components/SettingsPanel'
 import { StatusBar }           from './components/StatusBar'
 import { DragDropOverlay }     from './components/DragDropOverlay'
-import { ModelSelector }       from './components/ModelSelector'
 import { NotificationBanner }  from './components/NotificationBanner'
 import { ScheduledTasks }      from './components/ScheduledTasks'
 import { CommandPalette }      from './components/CommandPalette'
+import { CommandPaletteV2 }    from './components/CommandPaletteV2'
 import { ProjectsRail, CreateProjectModal } from './components/ProjectsRail'
 import { ArtifactPane, parseArtifacts }    from './components/ArtifactPane'
 import { PromptLibrary }       from './components/PromptLibrary'
@@ -38,11 +45,51 @@ import { ActionQueueProvider, ActionConfirmation, useActionQueue } from './compo
 import { Onboarding }          from './components/Onboarding'
 import { ModelComparison }     from './components/ModelComparison'
 import { MCPBrowser }          from './components/MCPBrowser'
+import CoworkLayout            from './components/cowork/CoworkLayout'
+import ComputerUsePanel        from './components/ComputerUsePanel'
+import AgentPanel              from './components/AgentPanel'
+import MemoryInspectorPanel    from './components/MemoryInspectorPanel'
+import WorkflowRecipesPanel    from './components/WorkflowRecipesPanel'
+import AgentStudioPanel        from './components/AgentStudioPanel'
+import StreamChatPanel         from './components/StreamChatPanel'
+import CollaborationTimeline   from './components/CollaborationTimeline'
+import ProviderDashboard       from './components/ProviderDashboard'
+import KnowledgeGraphPanel     from './components/KnowledgeGraphPanel'
+import ConversationTreePanel   from './components/ConversationTreePanel'
+import AgentAnalyticsPanel     from './components/AgentAnalyticsPanel'
+import NotificationCenterPanel from './components/NotificationCenterPanel'
+import CodebaseExplorerPanel   from './components/CodebaseExplorerPanel'
+import ContextVisualizerPanel  from './components/ContextVisualizerPanel'
+import PluginStudioPanel       from './components/PluginStudioPanel'
+import PromptLibraryPanel2     from './components/PromptLibraryPanel2'
+import TaskBoardPanel          from './components/TaskBoardPanel'
+import ApiPlaygroundPanel      from './components/ApiPlaygroundPanel'
+import PerformanceProfilerPanel from './components/PerformanceProfilerPanel'
+import VoiceInterfacePanel     from './components/VoiceInterfacePanel'
+import FileAttachmentPanel     from './components/FileAttachmentPanel'
+import DiffViewerPanel         from './components/DiffViewerPanel'
+import ABTestingPanel          from './components/ABTestingPanel'
+import ThemeEditorPanel        from './components/ThemeEditorPanel'
+import GlobalSearchPanel       from './components/GlobalSearchPanel'
+import ActivityFeedPanel       from './components/ActivityFeedPanel'
+import WorkspaceExportPanel    from './components/WorkspaceExportPanel'
+import ReportGeneratorPanel    from './components/ReportGeneratorPanel'
+import WebhookManagerPanel     from './components/WebhookManagerPanel'
+import BackupManagerPanel      from './components/BackupManagerPanel'
+import SessionSharingPanel     from './components/SessionSharingPanel'
+import ErrorBoundaryPanel      from './components/ErrorBoundaryPanel'
+import OfflineManagerPanel     from './components/OfflineManagerPanel'
+import StartupProfilerPanel    from './components/StartupProfilerPanel'
+import AccessibilityPanel      from './components/AccessibilityPanel'
+import BuildValidatorPanel     from './components/BuildValidatorPanel'
+import CodeBenchmarkPanel      from './components/CodeBenchmarkPanel'
+import WebSearchPanel          from './components/WebSearchPanel'
 import type { Project }        from '../preload/index'
 import type { ChatMessage }    from './hooks/useOpenClaw'
 
 // ── Panel state ────────────────────────────────────────────────────────────────
-type Panel = 'none' | 'settings' | 'scheduled'
+type AppMode = 'chat' | 'cowork'
+type Panel = 'none' | 'settings' | 'scheduled' | 'computer-use' | 'agent-pipeline' | 'memory-inspector' | 'workflow-recipes' | 'agent-studio' | 'stream-chat' | 'collab-timeline' | 'provider-dashboard' | 'knowledge-graph' | 'conv-tree' | 'agent-analytics' | 'notification-center' | 'codebase-explorer' | 'context-visualizer' | 'plugin-studio' | 'prompt-library-v2' | 'task-board' | 'api-playground' | 'perf-profiler' | 'voice-interface' | 'file-attachment' | 'diff-viewer' | 'ab-testing' | 'theme-editor' | 'global-search' | 'activity-feed' | 'workspace-export' | 'report-gen' | 'webhook-mgr' | 'backup-mgr' | 'session-sharing' | 'error-boundary' | 'offline-mgr' | 'startup-profiler' | 'accessibility' | 'build-validator' | 'code-benchmark' | 'web-search'
 type Modal = 'none' | 'prompts' | 'export' | 'voice' | 'createProject' | 'commandPalette' | 'modelCompare' | 'mcpBrowser'
 
 // ── Session color map ──────────────────────────────────────────────────────────
@@ -66,16 +113,24 @@ export const App: React.FC = () => {
   const oc = useOpenClaw()
 
   // ── UI state ──────────────────────────────────────────────────────────────
+  const [appMode, setAppMode]             = useState<AppMode>('chat')
   const [panel, setPanel]                 = useState<Panel>('none')
   const [modal, setModal]                 = useState<Modal>('none')
+  const [commandPaletteV2Open, setCommandPaletteV2Open] = useState(false)
   const [searchQuery, setSearchQuery]     = useState('')
   const [incognito, setIncognito]         = useState(false)
   const [model, setModel]                 = useState('auto')
+  const [fastMode, setFastMode]           = useState(false)
+  const [ollamaModels, setOllamaModels]  = useState<Array<{ id: string; name: string; size: number; modifiedAt: string; parameterSize?: string; quantization?: string }>>([])
+  const [gatewayCatalog, setGatewayCatalog] = useState<Array<{ id: string; name: string; provider: string; contextWindow?: number; reasoning?: boolean }>>([])
+  const [connectedProviders, setConnectedProviders] = useState<string[]>([])
+  const [wallpaper, setWallpaper]         = useState('herringbone')
   const [zoomLabel, setZoomLabel]         = useState<string | null>(null)
   const [artifactOpen, setArtifactOpen]   = useState(false)
   const [terminalOpen, setTerminalOpen]   = useState(false)
   const [gitPanelOpen, setGitPanelOpen]   = useState(false)
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null) // null = loading
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['core']))
 
   // ── Projects state ─────────────────────────────────────────────────────────
   const [projects, setProjects]           = useState<Project[]>([])
@@ -86,12 +141,70 @@ export const App: React.FC = () => {
   const messagesEndRef  = useRef<HTMLDivElement>(null)
   const inputRef        = useRef<HTMLTextAreaElement>(null)
 
+  // ── Helper functions ───────────────────────────────────────────────────────
+  const toggleGroup = (groupName: string) => {
+    const newSet = new Set(expandedGroups)
+    if (newSet.has(groupName)) {
+      newSet.delete(groupName)
+    } else {
+      newSet.add(groupName)
+    }
+    setExpandedGroups(newSet)
+  }
+
   // ── Load projects ──────────────────────────────────────────────────────────
   const loadProjects = useCallback(async () => {
     try { setProjects(await window.nyra.projects.list()) } catch {}
   }, [])
 
   useEffect(() => { loadProjects() }, [loadProjects])
+
+  // ── Fetch local Ollama models ────────────────────────────────────────────
+  useEffect(() => {
+    let mounted = true
+    const fetch = () => window.nyra.ollama.models()
+      .then(m => { if (mounted) setOllamaModels(m) })
+      .catch(() => {})
+    fetch()
+    // Refresh every 30s in case models are added/removed
+    const iv = setInterval(fetch, 30_000)
+    return () => { mounted = false; clearInterval(iv) }
+  }, [])
+
+  // ── Fetch dynamic model catalog from OpenClaw gateway ──────────────────
+  useEffect(() => {
+    if (!oc.connected) return
+    let mounted = true
+    const fetchCatalog = async () => {
+      try {
+        const catalog = await oc.fetchModelCatalog()
+        if (mounted && catalog.length > 0) setGatewayCatalog(catalog)
+      } catch {}
+    }
+    fetchCatalog()
+    // Refresh every 60s in case new models are added
+    const iv = setInterval(fetchCatalog, 60_000)
+    return () => { mounted = false; clearInterval(iv) }
+  }, [oc.connected, oc.fetchModelCatalog])
+
+  // ── Fetch connected provider states ──────────────────────────────────────
+  useEffect(() => {
+    let mounted = true
+    const refresh = () => window.nyra.providers.list()
+      .then((states: Array<{ id: string; hasKey: boolean; enabled: boolean }>) => {
+        if (!mounted) return
+        const connected = states
+          .filter(s => s.hasKey && s.enabled)
+          .map(s => s.id)
+        // Also add 'ollama' if we have any local models
+        setConnectedProviders(connected)
+      })
+      .catch(() => {})
+    refresh()
+    // Refresh every 10s (providers may be connected/disconnected)
+    const iv = setInterval(refresh, 10_000)
+    return () => { mounted = false; clearInterval(iv) }
+  }, [])
 
   // ── Onboarding check ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -109,11 +222,63 @@ export const App: React.FC = () => {
     setShowOnboarding(false)
   }, [])
 
-  // ── Theme apply on mount ───────────────────────────────────────────────────
+  // ── Theme apply on mount (with Auto mode resolution) ─────────────────────
   useEffect(() => {
-    window.nyra.theme.get().then(t => applyThemeClass(t.mode, t.fontSize)).catch(() => {})
-    const unsub = window.nyra.theme.onChange(t => applyThemeClass(t.mode, t.fontSize))
-    return () => { if (typeof unsub === 'function') unsub() }
+    let mounted = true
+
+    const applyResolved = async (t: { mode: string; fontSize: string; wallpaper?: string }) => {
+      let effectiveMode = t.mode
+      if (t.mode === 'auto') {
+        try {
+          const systemDark = await window.nyra.theme.systemDark()
+          effectiveMode = resolveAutoMode(systemDark)
+        } catch {
+          effectiveMode = 'dark' // fallback
+        }
+      }
+      if (mounted) {
+        applyThemeClass(effectiveMode, t.fontSize)
+        if (t.wallpaper) setWallpaper(t.wallpaper)
+      }
+    }
+
+    // Initial apply
+    window.nyra.theme.get().then(applyResolved).catch(() => {})
+
+    // Listen for explicit theme changes (from SettingsPanel)
+    const unsubTheme = window.nyra.theme.onChange(applyResolved)
+
+    // Listen for system theme changes (only matters when mode is 'auto')
+    let unsubSystem: (() => void) | undefined
+    if (window.nyra.theme.onSystemChange) {
+      unsubSystem = window.nyra.theme.onSystemChange(async (systemDark: boolean) => {
+        try {
+          const t = await window.nyra.theme.get()
+          if (t.mode === 'auto' && mounted) {
+            const effectiveMode = resolveAutoMode(systemDark)
+            applyThemeClass(effectiveMode, t.fontSize)
+          }
+        } catch {}
+      })
+    }
+
+    // Re-check time-of-day every 5 minutes for auto mode
+    const timeCheck = setInterval(async () => {
+      try {
+        const t = await window.nyra.theme.get()
+        if (t.mode === 'auto' && mounted) {
+          const systemDark = await window.nyra.theme.systemDark()
+          applyThemeClass(resolveAutoMode(systemDark), t.fontSize)
+        }
+      } catch {}
+    }, 5 * 60 * 1000)
+
+    return () => {
+      mounted = false
+      if (typeof unsubTheme === 'function') unsubTheme()
+      if (typeof unsubSystem === 'function') unsubSystem()
+      clearInterval(timeCheck)
+    }
   }, [])
 
   // ── Scroll to bottom ───────────────────────────────────────────────────────
@@ -126,8 +291,21 @@ export const App: React.FC = () => {
     const u1 = window.nyra.shortcuts.onNewChat(() => { oc.createSession(); setPanel('none'); setModal('none') })
     const u2 = window.nyra.shortcuts.onSettings(() => setPanel(p => p === 'settings' ? 'none' : 'settings'))
     const u3 = window.nyra.shortcuts.onCommandPalette(() => setModal(m => m === 'commandPalette' ? 'none' : 'commandPalette'))
-    return () => { [u1, u2, u3].forEach(u => typeof u === 'function' && u()) }
-  }, [])
+    
+    // Cmd+K for panel launcher (CommandPaletteV2)
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k' && !commandPaletteV2Open) {
+        e.preventDefault()
+        setCommandPaletteV2Open(true)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    
+    return () => {
+      [u1, u2, u3].forEach(u => typeof u === 'function' && u())
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [commandPaletteV2Open])
 
   // ── Zoom indicator ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -232,18 +410,66 @@ export const App: React.FC = () => {
   }, [oc])
 
   // ── Handle send ────────────────────────────────────────────────────────────
+  // v4: sendMessage handles session creation internally — no double-create race
+  // When incognito is enabled, create an incognito session first if needed
+  // Pass the currently selected model so the gateway knows which LLM to route to
   const handleSend = useCallback(async (text: string, attachments?: ChatMessage['attachments']) => {
-    let sessionId = oc.activeSession?.id
-    if (!sessionId) {
-      const s = await oc.createSession()
-      sessionId = s?.id
-      // Assign to active project if one is selected
-      if (sessionId && activeProjectId) {
-        if (model !== 'auto') oc.setSessionModel?.(sessionId, model)
+    if (incognito && (!oc.activeSession || !oc.activeSession.incognito)) {
+      await oc.createSession({ incognito: true })
+    }
+    await oc.sendMessage(text, attachments, model)
+  }, [oc, incognito, model])
+
+  // ── Model change handler — syncs to both local state and active session ────
+  // The gateway re-reads auth-profiles.json on every LLM turn, so NO reconnect
+  // is needed. Previously we called oc.reconnect() here which killed the WS
+  // connection for 500ms and could lose in-flight streams — completely unnecessary.
+  const handleModelChange = useCallback(async (newModel: string) => {
+    setModel(newModel)
+    // Also persist on the active session so the gateway knows which model to use
+    if (oc.activeSession) {
+      oc.setSessionModel(oc.activeSession.id, newModel)
+    }
+    // Write model to auth-profiles so the gateway picks it up on next message
+    if (newModel !== 'auto') {
+      try {
+        // First, force-resync all stored API keys → auth-profiles.json
+        // This ensures the file is fresh from the encrypted keychain, fixing
+        // any corruption or stale entries that may have caused auth failures.
+        await window.nyra.providers.resync()
+        const ok = await window.nyra.providers.switchModel(newModel)
+        if (!ok) {
+          console.warn('[App] switchModel returned false for', newModel, '— provider may not have an API key configured')
+        } else {
+          console.log('[App] Model switched to', newModel, '— gateway will use it on next message')
+        }
+      } catch (err) {
+        console.warn('[App] Failed to switch model in auth-profiles:', err)
       }
     }
-    await oc.sendMessage(text, attachments)
-  }, [oc, activeProjectId, model])
+  }, [oc])
+
+  // ── Restore model from session when switching sessions ──────────────────
+  useEffect(() => {
+    if (oc.activeSession?.model) {
+      setModel(oc.activeSession.model)
+    }
+  }, [oc.activeSession?.id])
+
+  // ── Slash command handler ──────────────────────────────────────────────
+  const handleSlashCommand = useCallback((command: string) => {
+    switch (command) {
+      case 'help':      setModal('commandPalette'); break
+      case 'clear':     if (oc.activeSession) { oc.createSession(); } break
+      case 'new':       oc.createSession(); setPanel('none'); break
+      case 'export':    if (oc.activeSession) setModal('export'); break
+      case 'incognito': setIncognito(i => !i); break
+      case 'fast':      setFastMode(f => !f); break
+      case 'settings':  setPanel(p => p === 'settings' ? 'none' : 'settings'); break
+      case 'model':     /* model selector opens via ChatInput */ break
+      default: break
+    }
+  }, [oc])
 
   // ── Insert text from prompt/voice ──────────────────────────────────────────
   const handleInsertText = useCallback((text: string) => {
@@ -283,16 +509,14 @@ export const App: React.FC = () => {
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <ActionQueueProvider>
-    <div className="h-screen w-screen flex flex-col bg-[#0b0a08] text-white overflow-hidden select-none">
+    <div className={`h-screen w-screen flex bg-[#0b0a08] text-white overflow-hidden select-none wallpaper-${wallpaper}`}>
 
       <NotificationBanner />
       <ActionConfirmationOverlay />
       <DragDropOverlay onFiles={handleDrop} />
-      <TitleBar title={activeProject ? `${activeProject.emoji} ${activeProject.name}` : 'Nyra'} />
 
-      {/* ── Executive layout ─────────────────────────────────────────────── */}
-      <div className="flex flex-1 min-h-0">
-
+      {/* ── Left column: Projects Rail + Sidebar (full height) ────────── */}
+      <div className="flex flex-shrink-0 h-screen">
         {/* ── Projects Rail (52px) ─────────────────────────────────────── */}
         <ProjectsRail
           projects={projects}
@@ -302,27 +526,54 @@ export const App: React.FC = () => {
         />
 
         {/* ── Sidebar (220px) ──────────────────────────────────────────── */}
-        <aside className="w-[220px] flex-shrink-0 flex flex-col bg-[#0d0b09] border-r border-white/[0.06]">
+        <aside className="w-[220px] flex-shrink-0 flex flex-col bg-black/30 border-r border-white/[0.06]">
+          {/* Drag region for macOS traffic lights — sits at top of sidebar */}
+          <div className="h-11 flex items-center flex-shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
 
           {/* Sidebar header */}
-          <div className="flex items-center gap-2 px-3 py-3 border-b border-white/[0.05] flex-shrink-0">
-            <div className="flex-1 min-w-0">
-              {activeProject
-                ? <p className="text-[11px] font-semibold text-white/70 truncate">{activeProject.emoji} {activeProject.name}</p>
-                : <p className="text-[11px] font-bold text-white/50 tracking-widest uppercase">Nyra</p>
-              }
+          <div className="flex flex-col border-b border-white/[0.05] flex-shrink-0">
+            <div className="flex items-center gap-2 px-4 py-3">
+              <div className="flex-1 min-w-0">
+                {activeProject
+                  ? <p className="text-[11px] font-semibold text-white/70 truncate">{activeProject.emoji} {activeProject.name}</p>
+                  : <p className="text-[11px] font-bold text-white/50 tracking-widest uppercase">Nyra</p>
+                }
+              </div>
+              <button
+                onClick={() => { oc.createSession(); setPanel('none') }}
+                className="p-1.5 rounded-xl bg-terra-400/80 hover:bg-terra-500 text-white transition-colors flex-shrink-0"
+                title="New chat  ⌘N"
+              >
+                <Plus size={12} />
+              </button>
             </div>
-            <button
-              onClick={() => { oc.createSession(); setPanel('none') }}
-              className="p-1.5 rounded-xl bg-terra-400/80 hover:bg-terra-500 text-white transition-colors flex-shrink-0"
-              title="New chat  ⌘N"
-            >
-              <Plus size={12} />
-            </button>
+            {/* ── Mode switcher: Chat / Cowork ────────────────────────── */}
+            <div className="flex items-center gap-1 px-4 pb-2.5">
+              <button
+                onClick={() => setAppMode('chat')}
+                className={`flex-1 py-1.5 rounded-lg text-[10px] font-semibold tracking-wide transition-all ${
+                  appMode === 'chat'
+                    ? 'bg-terra-400/15 text-terra-300 border border-terra-400/25'
+                    : 'text-white/30 hover:text-white/50 hover:bg-white/[0.04]'
+                }`}
+              >
+                Chat
+              </button>
+              <button
+                onClick={() => setAppMode('cowork')}
+                className={`flex-1 py-1.5 rounded-lg text-[10px] font-semibold tracking-wide transition-all ${
+                  appMode === 'cowork'
+                    ? 'bg-terra-400/15 text-terra-300 border border-terra-400/25'
+                    : 'text-white/30 hover:text-white/50 hover:bg-white/[0.04]'
+                }`}
+              >
+                Cowork
+              </button>
+            </div>
           </div>
 
           {/* Search */}
-          <div className="px-2 py-2 flex-shrink-0">
+          <div className="px-3 py-2 flex-shrink-0">
             <div className="flex items-center gap-2 bg-white/[0.04] border border-white/[0.05] rounded-xl px-2.5 py-1.5">
               <Search size={10} className="text-white/20 flex-shrink-0" />
               <input
@@ -383,59 +634,347 @@ export const App: React.FC = () => {
             )}
           </div>
 
-          {/* Sidebar footer */}
-          <div className="border-t border-white/[0.05] px-2 py-2 flex items-center gap-1 flex-shrink-0">
-            <button
-              onClick={() => setIncognito(i => !i)}
-              title={incognito ? 'Exit incognito' : 'Incognito mode'}
-              className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-medium transition-all ${
-                incognito ? 'bg-gold-500/15 text-gold-300 border border-gold-500/25' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'
-              }`}
-            >
-              <Moon size={11} />
-              {incognito && 'Incog'}
-            </button>
-            <div className="flex-1" />
-            <button onClick={() => setModal('prompts')} title="Prompt Library" className="p-1.5 rounded-lg text-white/20 hover:text-white/50 hover:bg-white/[0.04] transition-colors">
-              <BookOpen size={13} />
-            </button>
-            <button onClick={() => setTerminalOpen(v => !v)} title="Terminal  ⌘`"
-              className={`p-1.5 rounded-lg transition-colors ${terminalOpen ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
-              <Terminal size={13} />
-            </button>
-            <button onClick={() => setGitPanelOpen(v => !v)} title="Git"
-              className={`p-1.5 rounded-lg transition-colors ${gitPanelOpen ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
-              <GitCommitHorizontal size={13} />
-            </button>
-            <button onClick={() => setPanel(p => p === 'scheduled' ? 'none' : 'scheduled')} title="Scheduled tasks"
-              className={`p-1.5 rounded-lg transition-colors ${panel === 'scheduled' ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
-              <Clock size={13} />
-            </button>
-            <button onClick={() => setPanel(p => p === 'settings' ? 'none' : 'settings')} title="Settings  ⌘,"
-              className={`p-1.5 rounded-lg transition-colors ${panel === 'settings' ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
-              <Settings size={13} />
-            </button>
+          {/* Sidebar footer - Collapsible groups */}
+          <div className="border-t border-white/[0.05] flex-1 overflow-y-auto flex flex-col">
+            {/* Core Group */}
+            <div>
+              <button
+                onClick={() => toggleGroup('core')}
+                className="w-full flex items-center gap-1 px-2 py-1.5 text-[9px] uppercase tracking-wider text-white/25 hover:text-white/40 transition-colors"
+              >
+                <ChevronDown size={9} style={{
+                  transform: expandedGroups.has('core') ? 'rotate(0deg)' : 'rotate(-90deg)',
+                  transition: 'transform 150ms ease-out'
+                }} />
+                <span className="flex-1">Core</span>
+                <span className="text-[8px] bg-white/10 px-1.5 rounded">
+                  {Array.from(['terminal', 'git', 'scheduled', 'computer-use', 'settings', 'incognito', 'prompts']).filter(p => p === 'prompts' ? true : p === 'terminal' ? terminalOpen : p === 'git' ? gitPanelOpen : p === 'scheduled' ? panel === 'scheduled' : p === 'computer-use' ? panel === 'computer-use' : p === 'settings' ? panel === 'settings' : incognito).length}
+                </span>
+              </button>
+              {expandedGroups.has('core') && (
+                <div className="flex flex-wrap gap-1 px-2 py-1">
+                  <button onClick={() => setTerminalOpen(v => !v)} title="Terminal  ⌘`"
+                    className={`p-1.5 rounded-lg transition-colors ${terminalOpen ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Terminal size={13} />
+                  </button>
+                  <button onClick={() => setGitPanelOpen(v => !v)} title="Git"
+                    className={`p-1.5 rounded-lg transition-colors ${gitPanelOpen ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <GitCommitHorizontal size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'scheduled' ? 'none' : 'scheduled')} title="Scheduled tasks"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'scheduled' ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Clock size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'computer-use' ? 'none' : 'computer-use')} title="Computer Use"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'computer-use' ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Monitor size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'settings' ? 'none' : 'settings')} title="Settings  ⌘,"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'settings' ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Settings size={13} />
+                  </button>
+                  <button
+                    onClick={() => setIncognito(i => !i)}
+                    title={incognito ? 'Exit incognito' : 'Incognito mode'}
+                    className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-medium transition-all ${
+                      incognito ? 'bg-gold-500/15 text-gold-300 border border-gold-500/25' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    <Moon size={11} />
+                  </button>
+                  <button onClick={() => setModal('prompts')} title="Prompt Library" className="p-1.5 rounded-lg text-white/20 hover:text-white/50 hover:bg-white/[0.04] transition-colors">
+                    <BookOpen size={13} />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* AI & Agents Group */}
+            <div>
+              <button
+                onClick={() => toggleGroup('ai-agents')}
+                className="w-full flex items-center gap-1 px-2 py-1.5 text-[9px] uppercase tracking-wider text-white/25 hover:text-white/40 transition-colors"
+              >
+                <ChevronDown size={9} style={{
+                  transform: expandedGroups.has('ai-agents') ? 'rotate(0deg)' : 'rotate(-90deg)',
+                  transition: 'transform 150ms ease-out'
+                }} />
+                <span className="flex-1">AI & Agents</span>
+                <span className="text-[8px] bg-white/10 px-1.5 rounded">
+                  {Array.from(['agent-pipeline', 'agent-studio', 'stream-chat', 'collab-timeline', 'workflow-recipes', 'agent-analytics']).filter(p => panel === p).length}
+                </span>
+              </button>
+              {expandedGroups.has('ai-agents') && (
+                <div className="flex flex-wrap gap-1 px-2 py-1">
+                  <button onClick={() => setPanel(p => p === 'agent-pipeline' ? 'none' : 'agent-pipeline')} title="Agent Pipeline"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'agent-pipeline' ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Brain size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'agent-studio' ? 'none' : 'agent-studio')} title="Agent Studio"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'agent-studio' ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Users size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'stream-chat' ? 'none' : 'stream-chat')} title="Stream Chat"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'stream-chat' ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <MessageSquare size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'collab-timeline' ? 'none' : 'collab-timeline')} title="Collaboration Timeline"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'collab-timeline' ? 'text-gold-300 bg-gold-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Activity size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'workflow-recipes' ? 'none' : 'workflow-recipes')} title="Workflow Recipes"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'workflow-recipes' ? 'text-gold-300 bg-gold-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Layers size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'agent-analytics' ? 'none' : 'agent-analytics')} title="Agent Analytics"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'agent-analytics' ? 'text-gold-300 bg-gold-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <BarChart3 size={13} />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Knowledge Group */}
+            <div>
+              <button
+                onClick={() => toggleGroup('knowledge')}
+                className="w-full flex items-center gap-1 px-2 py-1.5 text-[9px] uppercase tracking-wider text-white/25 hover:text-white/40 transition-colors"
+              >
+                <ChevronDown size={9} style={{
+                  transform: expandedGroups.has('knowledge') ? 'rotate(0deg)' : 'rotate(-90deg)',
+                  transition: 'transform 150ms ease-out'
+                }} />
+                <span className="flex-1">Knowledge</span>
+                <span className="text-[8px] bg-white/10 px-1.5 rounded">
+                  {Array.from(['memory-inspector', 'knowledge-graph', 'context-visualizer', 'codebase-explorer', 'conv-tree', 'prompt-library-v2']).filter(p => panel === p).length}
+                </span>
+              </button>
+              {expandedGroups.has('knowledge') && (
+                <div className="flex flex-wrap gap-1 px-2 py-1">
+                  <button onClick={() => setPanel(p => p === 'memory-inspector' ? 'none' : 'memory-inspector')} title="Memory Inspector"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'memory-inspector' ? 'text-sage-300 bg-sage-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Database size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'knowledge-graph' ? 'none' : 'knowledge-graph')} title="Knowledge Graph"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'knowledge-graph' ? 'text-gold-300 bg-gold-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Share2 size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'context-visualizer' ? 'none' : 'context-visualizer')} title="Context Window"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'context-visualizer' ? 'text-gold-300 bg-gold-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Gauge size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'codebase-explorer' ? 'none' : 'codebase-explorer')} title="Codebase Explorer"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'codebase-explorer' ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <FolderSearch size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'conv-tree' ? 'none' : 'conv-tree')} title="Conversation Branches"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'conv-tree' ? 'text-sage-300 bg-sage-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <GitFork size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'prompt-library-v2' ? 'none' : 'prompt-library-v2')} title="Prompt Library"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'prompt-library-v2' ? 'text-gold-300 bg-gold-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <BookMarked size={13} />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Tools Group */}
+            <div>
+              <button
+                onClick={() => toggleGroup('tools')}
+                className="w-full flex items-center gap-1 px-2 py-1.5 text-[9px] uppercase tracking-wider text-white/25 hover:text-white/40 transition-colors"
+              >
+                <ChevronDown size={9} style={{
+                  transform: expandedGroups.has('tools') ? 'rotate(0deg)' : 'rotate(-90deg)',
+                  transition: 'transform 150ms ease-out'
+                }} />
+                <span className="flex-1">Tools</span>
+                <span className="text-[8px] bg-white/10 px-1.5 rounded">
+                  {Array.from(['api-playground', 'diff-viewer', 'ab-testing', 'plugin-studio', 'task-board', 'voice-interface', 'file-attachment', 'theme-editor', 'code-benchmark']).filter(p => panel === p).length}
+                </span>
+              </button>
+              {expandedGroups.has('tools') && (
+                <div className="flex flex-wrap gap-1 px-2 py-1">
+                  <button onClick={() => setPanel(p => p === 'api-playground' ? 'none' : 'api-playground')} title="API Playground"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'api-playground' ? 'text-gold-300 bg-gold-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <PlayCircle size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'diff-viewer' ? 'none' : 'diff-viewer')} title="Diff Viewer"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'diff-viewer' ? 'text-sage-300 bg-sage-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <GitCompare size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'ab-testing' ? 'none' : 'ab-testing')} title="A/B Testing"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'ab-testing' ? 'text-gold-300 bg-gold-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <FlaskConical size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'plugin-studio' ? 'none' : 'plugin-studio')} title="Plugin Studio"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'plugin-studio' ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Package size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'task-board' ? 'none' : 'task-board')} title="Task Board"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'task-board' ? 'text-sage-300 bg-sage-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <LayoutGrid size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'voice-interface' ? 'none' : 'voice-interface')} title="Voice Interface"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'voice-interface' ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Mic size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'file-attachment' ? 'none' : 'file-attachment')} title="File Attachments"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'file-attachment' ? 'text-gold-300 bg-gold-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Paperclip size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'theme-editor' ? 'none' : 'theme-editor')} title="Theme Editor"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'theme-editor' ? 'text-gold-300 bg-gold-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Palette size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'code-benchmark' ? 'none' : 'code-benchmark')} title="Code Benchmark"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'code-benchmark' ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Trophy size={13} />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Search & Analytics Group */}
+            <div>
+              <button
+                onClick={() => toggleGroup('search-analytics')}
+                className="w-full flex items-center gap-1 px-2 py-1.5 text-[9px] uppercase tracking-wider text-white/25 hover:text-white/40 transition-colors"
+              >
+                <ChevronDown size={9} style={{
+                  transform: expandedGroups.has('search-analytics') ? 'rotate(0deg)' : 'rotate(-90deg)',
+                  transition: 'transform 150ms ease-out'
+                }} />
+                <span className="flex-1">Search & Analytics</span>
+                <span className="text-[8px] bg-white/10 px-1.5 rounded">
+                  {Array.from(['provider-dashboard', 'perf-profiler', 'notification-center', 'global-search', 'activity-feed', 'report-gen', 'startup-profiler', 'web-search']).filter(p => panel === p).length}
+                </span>
+              </button>
+              {expandedGroups.has('search-analytics') && (
+                <div className="flex flex-wrap gap-1 px-2 py-1">
+                  <button onClick={() => setPanel(p => p === 'provider-dashboard' ? 'none' : 'provider-dashboard')} title="Provider Dashboard"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'provider-dashboard' ? 'text-sage-300 bg-sage-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Wifi size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'perf-profiler' ? 'none' : 'perf-profiler')} title="Performance Profiler"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'perf-profiler' ? 'text-gold-300 bg-gold-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Timer size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'notification-center' ? 'none' : 'notification-center')} title="Notifications"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'notification-center' ? 'text-blush-300 bg-blush-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Bell size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'global-search' ? 'none' : 'global-search')} title="Global Search"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'global-search' ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <SearchCode size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'activity-feed' ? 'none' : 'activity-feed')} title="Activity Feed"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'activity-feed' ? 'text-sage-300 bg-sage-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Rss size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'report-gen' ? 'none' : 'report-gen')} title="Report Generator"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'report-gen' ? 'text-gold-300 bg-gold-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <FileText size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'startup-profiler' ? 'none' : 'startup-profiler')} title="Startup Profiler"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'startup-profiler' ? 'text-gold-300 bg-gold-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Zap size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'web-search' ? 'none' : 'web-search')} title="Web Search"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'web-search' ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Globe size={13} />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* System Group */}
+            <div>
+              <button
+                onClick={() => toggleGroup('system')}
+                className="w-full flex items-center gap-1 px-2 py-1.5 text-[9px] uppercase tracking-wider text-white/25 hover:text-white/40 transition-colors"
+              >
+                <ChevronDown size={9} style={{
+                  transform: expandedGroups.has('system') ? 'rotate(0deg)' : 'rotate(-90deg)',
+                  transition: 'transform 150ms ease-out'
+                }} />
+                <span className="flex-1">System</span>
+                <span className="text-[8px] bg-white/10 px-1.5 rounded">
+                  {Array.from(['workspace-export', 'backup-mgr', 'session-sharing', 'error-boundary', 'offline-mgr', 'accessibility', 'build-validator', 'webhook-mgr']).filter(p => panel === p).length}
+                </span>
+              </button>
+              {expandedGroups.has('system') && (
+                <div className="flex flex-wrap gap-1 px-2 py-1">
+                  <button onClick={() => setPanel(p => p === 'workspace-export' ? 'none' : 'workspace-export')} title="Workspace Export"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'workspace-export' ? 'text-gold-300 bg-gold-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <FileArchive size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'backup-mgr' ? 'none' : 'backup-mgr')} title="Backup Manager"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'backup-mgr' ? 'text-sage-300 bg-sage-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <DatabaseBackup size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'session-sharing' ? 'none' : 'session-sharing')} title="Session Sharing"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'session-sharing' ? 'text-gold-300 bg-gold-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Share size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'error-boundary' ? 'none' : 'error-boundary')} title="Error Boundary"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'error-boundary' ? 'text-blush-300 bg-blush-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Bug size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'offline-mgr' ? 'none' : 'offline-mgr')} title="Offline Manager"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'offline-mgr' ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <WifiOff size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'accessibility' ? 'none' : 'accessibility')} title="Accessibility"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'accessibility' ? 'text-sage-300 bg-sage-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Accessibility size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'build-validator' ? 'none' : 'build-validator')} title="Build Validator"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'build-validator' ? 'text-sage-300 bg-sage-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <ShieldCheck size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'webhook-mgr' ? 'none' : 'webhook-mgr')} title="Webhook Manager"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'webhook-mgr' ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Webhook size={13} />
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </aside>
+      </div>
 
-        {/* ── Chat area (flex-1) ────────────────────────────────────────── */}
+      {/* ── Right column: TitleBar + Content (flex-1) ──────────────────── */}
+      <div className="flex flex-col flex-1 min-w-0 min-h-0">
+        <TitleBar title={activeProject ? `${activeProject.emoji} ${activeProject.name}` : 'Nyra'} />
+
+        {/* ── Executive layout (content row) ─────────────────────────── */}
+        <div className="flex flex-1 min-h-0">
+
+        {/* ── Main content area (flex-1) — Chat or Cowork ────────────── */}
+        {appMode === 'cowork' ? (
+          <main className="flex flex-col flex-1 min-w-0 relative">
+            <CoworkLayout />
+          </main>
+        ) : (
         <main className="flex flex-col flex-1 min-w-0 relative">
 
-          {/* Chat header */}
-          <div className="flex items-center h-11 px-4 border-b border-white/[0.05] flex-shrink-0 gap-3">
+          {/* Chat header — minimal, Claude-style */}
+          <div className="flex items-center h-10 px-5 border-b border-white/[0.04] flex-shrink-0 gap-3">
             <div className="flex-1 min-w-0">
               {oc.activeSession && (
-                <p className="text-xs text-white/60 truncate font-medium">
+                <p className="text-[12px] text-white/40 truncate font-medium">
                   {oc.activeSession.title || 'New chat'}
                   {oc.activeSession.branchedFrom && (
-                    <span className="ml-2 text-gold-400/60 text-[10px]"><GitBranch size={9} className="inline mr-0.5" />branched</span>
+                    <span className="ml-2 text-gold-400/40 text-[10px]"><GitBranch size={9} className="inline mr-0.5" />branched</span>
                   )}
                 </p>
               )}
             </div>
 
             {zoomLabel && (
-              <div className="bg-white/[0.07] rounded-md px-2 py-0.5 text-[10px] text-white/50 font-mono">
+              <div className="bg-white/[0.05] rounded-md px-2 py-0.5 text-[10px] text-white/40 font-mono">
                 {zoomLabel}
               </div>
             )}
@@ -445,36 +984,24 @@ export const App: React.FC = () => {
               <button
                 onClick={() => setArtifactOpen(a => !a)}
                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] transition-colors ${
-                  artifactOpen ? 'bg-terra-400/15 text-terra-300 border border-terra-400/30' : 'text-white/30 hover:text-white/60 hover:bg-white/[0.04]'
+                  artifactOpen ? 'bg-terra-400/15 text-terra-300 border border-terra-400/30' : 'text-white/25 hover:text-white/50 hover:bg-white/[0.03]'
                 }`}
               >
                 <Hash size={11} />
-                {activeArtifacts.length} artifact{activeArtifacts.length > 1 ? 's' : ''}
+                {activeArtifacts.length}
               </button>
             )}
 
             {/* Export */}
             {oc.activeSession && messages.length > 0 && (
-              <button onClick={() => setModal('export')} title="Export chat" className="p-1.5 rounded-lg text-white/20 hover:text-white/60 hover:bg-white/[0.04] transition-colors">
-                <Download size={13} />
+              <button onClick={() => setModal('export')} title="Export chat" className="p-1.5 rounded-lg text-white/15 hover:text-white/50 hover:bg-white/[0.03] transition-colors">
+                <Download size={12} />
               </button>
             )}
-
-            <ModelSelector value={model} onChange={setModel} />
-
-            {/* Status dot */}
-            <div
-              title={`Gateway: ${oc.status}`}
-              className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                oc.status === 'ready' ? 'bg-green-400' :
-                oc.status === 'error' ? 'bg-red-400' :
-                'bg-amber-400 animate-pulse'
-              }`}
-            />
           </div>
 
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4 scrollbar-thin">
+          {/* Messages — Claude-like clean flow */}
+          <div className="flex-1 overflow-y-auto scrollbar-thin">
             {!oc.activeSession || messages.length === 0 ? (
               <WelcomeScreen
                 onSuggestion={async (text) => {
@@ -483,39 +1010,48 @@ export const App: React.FC = () => {
                 }}
               />
             ) : (
-              <>
+              <div className="divide-y divide-white/[0.03]">
                 {messages.map((m, i) => (
                   <ChatMessageBubble
                     key={m.id ?? `msg-${i}`}
                     message={m}
                     isStreaming={oc.streaming && i === messages.length - 1 && m.role === 'assistant'}
+                    streamingPhase={oc.streaming && i === messages.length - 1 && m.role === 'assistant' ? oc.streamingPhase : undefined}
                     onBranch={m.role === 'assistant' ? () => oc.branchSession(oc.activeSession!.id, i) : undefined}
                   />
                 ))}
+                {/* Streaming indicator — subtle, inside the flow */}
                 {oc.streaming && (
-                  <div className="flex items-center gap-2 pl-10">
-                    <Loader2 size={12} className="animate-spin text-terra-300" />
-                    <span className="text-xs text-white/25">Thinking…</span>
+                  <div className="py-3 px-6">
+                    <div className="max-w-[720px] mx-auto flex items-center gap-2">
+                      <Loader2 size={12} className="animate-spin text-terra-300/60" />
+                      <span className="text-[12px] text-white/20">
+                        {oc.streamingPhase === 'thinking' ? 'Thinking…' :
+                         oc.streamingPhase === 'tool-use' ? 'Using tools…' :
+                         oc.streamingPhase === 'generating' ? 'Writing…' :
+                         'Connecting…'}
+                      </span>
+                    </div>
                   </div>
                 )}
                 <div ref={messagesEndRef} />
-              </>
+              </div>
             )}
           </div>
 
           {/* Error reconnect banner */}
           {oc.status === 'error' && (
-            <div className="flex items-center gap-3 px-4 py-2.5 bg-red-900/20 border-t border-red-500/15 flex-shrink-0">
-              <AlertTriangle size={12} className="text-red-400 flex-shrink-0" />
-              <p className="text-xs text-red-300/80 flex-1">OpenClaw connection lost — messages are queued</p>
-              <button onClick={oc.restart} className="flex items-center gap-1.5 text-xs text-red-300 hover:text-red-100 font-medium transition-colors">
+            <div className="flex items-center gap-3 px-4 py-2.5 bg-blush-400/10 border-t border-blush-400/15 flex-shrink-0">
+              <AlertTriangle size={12} className="text-blush-300 flex-shrink-0" />
+              <p className="text-xs text-blush-300/80 flex-1">OpenClaw connection lost — messages are queued</p>
+              <button onClick={oc.restart} className="flex items-center gap-1.5 text-xs text-blush-300 hover:text-blush-300/60 font-medium transition-colors">
                 <RefreshCw size={11} /> Reconnect
               </button>
             </div>
           )}
 
-          {/* Input */}
-          <div className="flex-shrink-0 px-5 pb-5 pt-3">
+          {/* Input — centered, Claude-style */}
+          <div className="flex-shrink-0 px-5 pb-4 pt-3">
             <ChatInput
               ref={inputRef}
               onSend={handleSend}
@@ -524,9 +1060,18 @@ export const App: React.FC = () => {
               systemPrompt={activeProject?.systemPrompt || oc.activeSession?.systemPrompt}
               onStartVoice={() => setModal('voice')}
               onScreenCapture={handleScreenCapture}
+              model={model}
+              onModelChange={handleModelChange}
+              connectedProviders={[...connectedProviders, ...(ollamaModels.length > 0 ? ['ollama'] : [])]}
+              ollamaModels={ollamaModels}
+              gatewayCatalog={gatewayCatalog}
+              fastMode={fastMode}
+              onFastModeChange={setFastMode}
+              onSlashCommand={handleSlashCommand}
             />
           </div>
         </main>
+        )}
 
         {/* ── Artifact Pane (slides in) ─────────────────────────────────── */}
         {artifactOpen && activeArtifacts.length > 0 && (
@@ -535,23 +1080,400 @@ export const App: React.FC = () => {
 
         {/* ── Settings panel (fixed drawer) ─────────────────────────────── */}
         {panel === 'settings' && (
-          <div className="w-[380px] flex-shrink-0 flex flex-col border-l border-white/[0.06] bg-[#141210]">
+          <div className="w-[380px] flex-shrink-0 flex flex-col border-l border-white/[0.06] bg-black/50 backdrop-blur-md">
             <SettingsPanel onClose={() => setPanel('none')} />
           </div>
         )}
 
         {/* ── Git panel (slide-in drawer) ─────────────────────────────────── */}
         <GitPanel visible={gitPanelOpen} onClose={() => setGitPanelOpen(false)} />
-      </div>
+        </div>{/* end executive layout (content row) */}
 
-      {/* ── Terminal panel (bottom) ─────────────────────────────────────── */}
-      <TerminalPanel visible={terminalOpen} onToggle={() => setTerminalOpen(v => !v)} />
+        {/* ── Terminal panel (bottom) ─────────────────────────────────────── */}
+        <TerminalPanel visible={terminalOpen} onToggle={() => setTerminalOpen(v => !v)} />
 
-      {/* Status bar */}
-      <StatusBar status={oc.status} wsUrl={oc.wsUrl} log={oc.log} />
+        {/* Status bar */}
+        <StatusBar status={oc.status} wsStatus={oc.wsStatus} wsUrl={oc.wsUrl} log={oc.log} />
+      </div>{/* end right column */}
 
       {/* ── Scheduled tasks modal ─────────────────────────────────────────── */}
       {panel === 'scheduled' && <ScheduledTasks onClose={() => setPanel('none')} />}
+
+      {/* ── Computer Use panel ─────────────────────────────────────────────── */}
+      {panel === 'computer-use' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[480px] h-[600px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.06]">
+              <span className="text-sm font-semibold text-white/80">Computer Use</span>
+              <button onClick={() => setPanel('none')} className="text-white/30 hover:text-white/60 text-lg leading-none">&times;</button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <ComputerUsePanel />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Agent Pipeline panel ────────────────────────────────────────────── */}
+      {panel === 'agent-pipeline' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[420px] h-[640px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <AgentPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Memory Inspector panel ──────────────────────────────────────────── */}
+      {panel === 'memory-inspector' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[420px] h-[640px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <MemoryInspectorPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Workflow Recipes panel ──────────────────────────────────────────── */}
+      {panel === 'workflow-recipes' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[460px] h-[640px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <WorkflowRecipesPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Agent Studio panel ──────────────────────────────────────────────── */}
+      {panel === 'agent-studio' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[460px] h-[680px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <AgentStudioPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Stream Chat panel ────────────────────────────────────────────── */}
+      {panel === 'stream-chat' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[500px] h-[700px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <StreamChatPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Collaboration Timeline panel ─────────────────────────────────── */}
+      {panel === 'collab-timeline' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[480px] h-[660px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <CollaborationTimeline />
+          </div>
+        </div>
+      )}
+
+      {/* ── Provider Dashboard panel ─────────────────────────────────────── */}
+      {panel === 'provider-dashboard' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[440px] h-[620px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <ProviderDashboard />
+          </div>
+        </div>
+      )}
+
+      {/* ── Knowledge Graph panel ────────────────────────────────────────── */}
+      {panel === 'knowledge-graph' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[680px] h-[520px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <KnowledgeGraphPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Conversation Tree panel ──────────────────────────────────────── */}
+      {panel === 'conv-tree' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[440px] h-[640px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <ConversationTreePanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Agent Analytics panel ────────────────────────────────────────── */}
+      {panel === 'agent-analytics' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[520px] h-[680px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <AgentAnalyticsPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Notification Center panel ────────────────────────────────────── */}
+      {panel === 'notification-center' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[440px] h-[640px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <NotificationCenterPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Codebase Explorer panel ──────────────────────────────────────── */}
+      {panel === 'codebase-explorer' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[720px] h-[600px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <CodebaseExplorerPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Context Visualizer panel ─────────────────────────────────────── */}
+      {panel === 'context-visualizer' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[480px] h-[640px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <ContextVisualizerPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Plugin Studio panel ───────────────────────────────────────────── */}
+      {panel === 'plugin-studio' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[520px] h-[640px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <PluginStudioPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Prompt Library v2 panel ───────────────────────────────────────── */}
+      {panel === 'prompt-library-v2' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[480px] h-[640px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <PromptLibraryPanel2 />
+          </div>
+        </div>
+      )}
+
+      {/* ── Task Board panel ──────────────────────────────────────────────── */}
+      {panel === 'task-board' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[900px] h-[600px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <TaskBoardPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── API Playground panel ──────────────────────────────────────────── */}
+      {panel === 'api-playground' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[560px] h-[680px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <ApiPlaygroundPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Performance Profiler panel ────────────────────────────────────── */}
+      {panel === 'perf-profiler' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[560px] h-[640px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <PerformanceProfilerPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Voice Interface panel ─────────────────────────────────────────── */}
+      {panel === 'voice-interface' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[480px] h-[600px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <VoiceInterfacePanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── File Attachment panel ──────────────────────────────────────────── */}
+      {panel === 'file-attachment' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[500px] h-[620px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <FileAttachmentPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Diff Viewer panel ──────────────────────────────────────────────── */}
+      {panel === 'diff-viewer' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[700px] h-[640px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <DiffViewerPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── A/B Testing panel ──────────────────────────────────────────────── */}
+      {panel === 'ab-testing' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[580px] h-[660px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <ABTestingPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Theme Editor panel ─────────────────────────────────────────────── */}
+      {panel === 'theme-editor' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[520px] h-[680px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <ThemeEditorPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Global Search panel ─────────────────────────────────────────────── */}
+      {panel === 'global-search' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[560px] h-[620px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <GlobalSearchPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Activity Feed panel ─────────────────────────────────────────────── */}
+      {panel === 'activity-feed' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[520px] h-[640px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <ActivityFeedPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Workspace Export panel ──────────────────────────────────────────── */}
+      {panel === 'workspace-export' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[480px] h-[560px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <WorkspaceExportPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Report Generator panel ─────────────────────────────────────────── */}
+      {panel === 'report-gen' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[560px] h-[640px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <ReportGeneratorPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Webhook Manager panel ──────────────────────────────────────────── */}
+      {panel === 'webhook-mgr' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[560px] h-[660px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <WebhookManagerPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Backup Manager panel ───────────────────────────────────────────── */}
+      {panel === 'backup-mgr' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[480px] h-[580px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <BackupManagerPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Session Sharing panel ──────────────────────────────────────────── */}
+      {panel === 'session-sharing' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[480px] h-[560px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <SessionSharingPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Error Boundary panel ───────────────────────────────────────────── */}
+      {panel === 'error-boundary' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[560px] h-[640px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <ErrorBoundaryPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Offline Manager panel ──────────────────────────────────────────── */}
+      {panel === 'offline-mgr' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[480px] h-[560px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <OfflineManagerPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Startup Profiler panel ─────────────────────────────────────────── */}
+      {panel === 'startup-profiler' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[520px] h-[600px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <StartupProfilerPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Accessibility panel ────────────────────────────────────────────── */}
+      {panel === 'accessibility' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[480px] h-[580px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <AccessibilityPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Build Validator panel ──────────────────────────────────────────── */}
+      {panel === 'build-validator' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[520px] h-[620px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <BuildValidatorPanel />
+          </div>
+        </div>
+      )}
+
+      {/* ── Code Benchmark panel ──────────────────────────────────────────── */}
+      {panel === 'code-benchmark' && (
+        <CodeBenchmarkPanel onClose={() => setPanel('none')} />
+      )}
+
+      {/* ── Web Search panel ─────────────────────────────────────────────── */}
+      {panel === 'web-search' && (
+        <WebSearchPanel onClose={() => setPanel('none')} />
+      )}
 
       {/* ── Command palette ───────────────────────────────────────────────── */}
       {modal === 'commandPalette' && (
@@ -568,6 +1490,14 @@ export const App: React.FC = () => {
           onStartVoice={() => setModal('voice')}
         />
       )}
+
+      {/* ── Panel launcher (CommandPaletteV2) ─────────────────────────────── */}
+      <CommandPaletteV2
+        open={commandPaletteV2Open}
+        onClose={() => setCommandPaletteV2Open(false)}
+        onSelectPanel={(panelId) => setPanel(panelId as Panel)}
+        currentPanel={panel}
+      />
 
       {/* ── Prompt library ───────────────────────────────────────────────── */}
       {modal === 'prompts' && (
@@ -659,7 +1589,7 @@ const SessionItem: React.FC<{
           {session.color && session.color !== 'none' && (
             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${COLOR_DOT[session.color]}`} />
           )}
-          {session.pinned && <Pin size={9} className="text-amber-400/70 flex-shrink-0" />}
+          {session.pinned && <Pin size={9} className="text-gold-400/70 flex-shrink-0" />}
           {session.incognito && <Moon size={9} className="text-gold-400 flex-shrink-0" />}
           <p className="text-[11px] font-medium truncate flex-1">{session.title || 'New chat'}</p>
         </div>
@@ -703,37 +1633,48 @@ const ContextMenuItem: React.FC<{
   </button>
 )
 
-// ── Welcome screen ─────────────────────────────────────────────────────────────
+// ── Welcome screen — clean, Claude-inspired ──────────────────────────────────
 const WelcomeScreen: React.FC<{ onSuggestion: (text: string) => void }> = ({ onSuggestion }) => (
-  <div className="flex flex-col items-center justify-center h-full gap-8">
-    <div className="flex flex-col items-center gap-3">
-      <div className="w-14 h-14 rounded-3xl bg-gradient-to-br from-terra-400/25 to-terra-600/25 border border-terra-400/20 flex items-center justify-center shadow-xl shadow-terra-400/10">
-        <Cpu size={24} className="text-terra-300" />
+  <div className="flex flex-col items-center justify-center h-full gap-10 px-6">
+    <div className="flex flex-col items-center gap-4">
+      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-terra-400/20 to-terra-600/15 border border-terra-400/15 flex items-center justify-center">
+        <Cpu size={22} className="text-terra-300/80" />
       </div>
-      <h2 className="text-xl font-semibold text-white/80">What can I help with?</h2>
-      <p className="text-xs text-white/25">Powered by OpenClaw · running locally · ⌘K to search</p>
+      <h2 className="text-lg font-medium text-white/70">What can I help with?</h2>
     </div>
 
-    <div className="grid grid-cols-3 gap-2 max-w-md w-full">
+    <div className="grid grid-cols-2 gap-2 max-w-[440px] w-full">
       {SUGGESTIONS.map(s => (
         <button
           key={s.text}
           onClick={() => onSuggestion(s.text)}
-          className="flex items-center gap-2 bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-white/[0.1] rounded-xl px-3 py-2.5 text-xs text-white/45 hover:text-white/80 transition-all text-left"
+          className="flex items-center gap-2.5 bg-white/[0.02] hover:bg-white/[0.05] border border-white/[0.05] hover:border-white/[0.08] rounded-xl px-4 py-3 text-[13px] text-white/35 hover:text-white/70 transition-all text-left"
         >
-          <span className="text-base leading-none flex-shrink-0 opacity-60">{s.icon}</span>
+          <span className="text-sm leading-none flex-shrink-0 opacity-40">{s.icon}</span>
           <span>{s.text}</span>
         </button>
       ))}
     </div>
+
+    <p className="text-[11px] text-white/[0.12]">Powered by OpenClaw · running locally</p>
   </div>
 )
 
 // ── Theme helper ───────────────────────────────────────────────────────────────
+function resolveAutoMode(systemDark: boolean): 'dark' | 'light' {
+  // Time-of-day heuristic: dark between 8pm and 7am
+  const hour = new Date().getHours()
+  const nightTime = hour >= 20 || hour < 7
+  // Use dark if either the system says dark or it's nighttime
+  return (systemDark || nightTime) ? 'dark' : 'light'
+}
+
 function applyThemeClass(mode: string, fontSize: string) {
   const root = document.documentElement
   root.classList.remove('theme-dark', 'theme-dim', 'theme-light', 'text-sm', 'text-base', 'text-lg')
-  root.classList.add(`theme-${mode}`)
+  // 'auto' should never reach here directly — it's resolved upstream — but guard just in case
+  const resolved = mode === 'auto' ? 'dark' : mode
+  root.classList.add(`theme-${resolved}`)
   root.style.fontSize = fontSize === 'sm' ? '13px' : fontSize === 'lg' ? '16px' : '14px'
 }
 

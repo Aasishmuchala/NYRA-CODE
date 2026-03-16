@@ -1,97 +1,41 @@
 /**
- * OAuth PKCE Flow — local browser-based sign-in for AI providers
+ * OAuth Orchestrator — EasyClaw-parity three-step pattern
  *
- * How it works (matching EasyClaw's pattern):
- *  1. Nyra generates a PKCE code_verifier + code_challenge
- *  2. Opens the provider's OAuth authorize URL in the user's default browser
- *  3. Starts a tiny HTTP server on 127.0.0.1:8085 to capture the callback
- *  4. On callback, exchanges the authorization code for an access token
- *  5. Stores the token via Nyra's encrypted keychain AND writes to
- *     OpenClaw's auth-profiles.json
+ * This module coordinates OAuth flows for all providers using a uniform
+ * three-step pattern matching EasyClaw's architecture:
  *
- * Supported providers:
- *  - OpenAI (ChatGPT)  — uses chatgpt.com OAuth
- *  - GitHub Copilot    — uses GitHub device flow
+ *   Step 1: acquire — Provider-specific token acquisition
+ *     • OpenAI:  PKCE flow via oauth-openai.ts (matches pi-ai/EasyClaw)
+ *     • Gemini:  Google OAuth2 via oauth-gemini.ts (CLI credential extraction)
+ *     • Copilot: GitHub device flow (enter code on github.com/login/device)
+ *     • Anthropic: Manual API key only (no consumer OAuth available)
  *
- * Note: Anthropic and Google don't offer consumer OAuth for API access,
- * so those use manual API key entry only.
+ *   Step 2: validate — Confirm the token actually works (with retry)
+ *     • OpenAI:  GET /v1/models (200 = valid)
+ *     • Gemini:  GET /oauth2/v3/userinfo (200 = valid)
+ *     • Copilot: GET /user (200 = valid)
+ *
+ *   Step 3: save — Persist to keychain + bridge to OpenClaw
+ *     • saveApiKey() → Electron safeStorage (encrypted on disk)
+ *     • syncOAuthToken() → ~/.openclaw/agents/main/agent/auth-profiles.json
+ *
+ * OpenClaw rereads auth-profiles.json every LLM turn, so no restart needed.
+ *
+ * Concurrency: Only one OAuth flow at a time (flow mutex from oauth-shared.ts).
+ * All browser-based flows share port 8085, so concurrent flows would collide.
  */
 
-import * as http from 'http'
-import * as crypto from 'crypto'
-import { shell, BrowserWindow } from 'electron'
+import { BrowserWindow, shell } from 'electron'
 import { saveApiKey } from './providers'
 import { syncOAuthToken } from './auth-profiles'
+import { acquireCodexOAuthToken, validateCodexAccessToken } from './oauth-openai'
+import { acquireGeminiOAuthToken, validateGeminiAccessToken, isGeminiCliAvailable } from './oauth-gemini'
+import {
+  acquireFlowLock, releaseFlowLock, getActiveFlow,
+  validateWithRetry,
+} from './oauth-shared'
 
-// ── PKCE Helpers ─────────────────────────────────────────────────────────────
-
-function generateCodeVerifier(): string {
-  return crypto.randomBytes(32).toString('base64url')
-}
-
-function generateCodeChallenge(verifier: string): string {
-  return crypto.createHash('sha256').update(verifier).digest('base64url')
-}
-
-function generateState(): string {
-  return crypto.randomBytes(16).toString('hex')
-}
-
-// ── OAuth provider configs ───────────────────────────────────────────────────
-
-const CALLBACK_PORT = 8085
-const CALLBACK_URL = `http://127.0.0.1:${CALLBACK_PORT}/oauth2callback`
-
-interface OAuthProviderConfig {
-  authorizeUrl: string
-  tokenUrl: string
-  clientId: string
-  scopes: string[]
-  // Some providers need different param names
-  extraAuthorizeParams?: Record<string, string>
-}
-
-/**
- * OAuth configs per provider.
- *
- * OpenAI:  Uses auth0-based OAuth at auth0.openai.com (same as ChatGPT login).
- *          Client ID must be a registered OAuth app — set NYRA_OPENAI_CLIENT_ID
- *          in your env, or the EasyClaw-compatible default is used.
- *
- * Claude:  Anthropic uses OAuth via console.anthropic.com for API access.
- *          Set NYRA_ANTHROPIC_CLIENT_ID in your env.
- *
- * GitHub:  Uses device flow (not standard PKCE) for Copilot.
- *          Set NYRA_GITHUB_CLIENT_ID in your env.
- */
-const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
-  'openai': {
-    authorizeUrl: 'https://auth0.openai.com/authorize',
-    tokenUrl: 'https://auth0.openai.com/oauth/token',
-    clientId: process.env.NYRA_OPENAI_CLIENT_ID ?? 'pdlLIX2Y72MgS3oleaJuCouzaOB5gvzl',
-    scopes: ['openid', 'profile', 'email', 'offline_access'],
-    extraAuthorizeParams: {
-      audience: 'https://api.openai.com/v1',
-    },
-  },
-  'anthropic': {
-    authorizeUrl: 'https://console.anthropic.com/oauth/authorize',
-    tokenUrl: 'https://console.anthropic.com/oauth/token',
-    clientId: process.env.NYRA_ANTHROPIC_CLIENT_ID ?? 'nyra-desktop',
-    scopes: ['api:read', 'api:write'],
-  },
-  'copilot': {
-    authorizeUrl: 'https://github.com/login/oauth/authorize',
-    tokenUrl: 'https://github.com/login/oauth/access_token',
-    clientId: process.env.NYRA_GITHUB_CLIENT_ID ?? 'Iv1.b507a08c87ecfe98',
-    scopes: ['copilot', 'read:user'],
-  },
-}
-
-// ── Active flow state ────────────────────────────────────────────────────────
-
-let activeServer: http.Server | null = null
-let _activeResolve: ((result: OAuthResult) => void) | null = null
+// ── Result type ──────────────────────────────────────────────────────────────
 
 export interface OAuthResult {
   success: boolean
@@ -100,193 +44,185 @@ export interface OAuthResult {
   refreshToken?: string
   expiresIn?: number
   error?: string
+  warning?: string  // non-fatal warnings (e.g. Gemini provisioning)
 }
 
-// ── Start OAuth flow ─────────────────────────────────────────────────────────
+// ── Main OAuth Flow Dispatcher ───────────────────────────────────────────────
 
+/**
+ * Start an OAuth flow for the given provider.
+ * Routes to the appropriate vendor-specific implementation.
+ *
+ * Only one flow runs at a time — the flow mutex prevents port conflicts.
+ */
 export async function startOAuthFlow(
   providerId: string,
   mainWindow: BrowserWindow
 ): Promise<OAuthResult> {
-  const config = OAUTH_CONFIGS[providerId]
-  if (!config) {
-    return { success: false, providerId, error: `No OAuth config for provider "${providerId}"` }
+  console.log(`[OAuth] Starting OAuth flow for provider: ${providerId}`)
+
+  // Check flow mutex — reject if another flow is already running
+  const activeProvider = getActiveFlow()
+  if (activeProvider) {
+    return {
+      success: false,
+      providerId,
+      error: `Another OAuth flow (${activeProvider}) is already in progress. Please wait for it to complete.`,
+    }
   }
 
-  // Kill any previous flow
-  if (activeServer) {
-    activeServer.close()
-    activeServer = null
+  // Acquire flow lock (cancel callback is a no-op; cleanup happens in finally)
+  if (!acquireFlowLock(providerId, () => {})) {
+    return {
+      success: false,
+      providerId,
+      error: 'Could not acquire OAuth flow lock. Please try again.',
+    }
   }
 
-  const codeVerifier = generateCodeVerifier()
-  const codeChallenge = generateCodeChallenge(codeVerifier)
-  const state = generateState()
-
-  return new Promise<OAuthResult>((resolve) => {
-    _activeResolve = resolve
-
-    // Start local callback server
-    const server = http.createServer(async (req, res) => {
-      const url = new URL(req.url ?? '/', `http://127.0.0.1:${CALLBACK_PORT}`)
-
-      if (url.pathname !== '/oauth2callback') {
-        res.writeHead(404)
-        res.end('Not found')
-        return
-      }
-
-      const code = url.searchParams.get('code')
-      const returnedState = url.searchParams.get('state')
-      const error = url.searchParams.get('error')
-
-      if (error) {
-        res.writeHead(200, { 'Content-Type': 'text/html' })
-        res.end(makeCallbackHtml('Error', `OAuth error: ${error}. You can close this tab.`))
-        cleanup()
-        resolve({ success: false, providerId, error })
-        return
-      }
-
-      if (!code || returnedState !== state) {
-        res.writeHead(400, { 'Content-Type': 'text/html' })
-        res.end(makeCallbackHtml('Error', 'Invalid callback. Please try again.'))
-        cleanup()
-        resolve({ success: false, providerId, error: 'Invalid state or missing code' })
-        return
-      }
-
-      // Exchange code for token
-      try {
-        const tokenResult = await exchangeCodeForToken(config, code, codeVerifier)
-
-        // Save to Nyra's encrypted keychain
-        if (tokenResult.accessToken) {
-          saveApiKey(providerId, tokenResult.accessToken)
-          // Also write as OAuth token to OpenClaw auth-profiles
-          syncOAuthToken(
-            providerId,
-            tokenResult.accessToken,
-            tokenResult.refreshToken,
-            tokenResult.expiresIn
-              ? Math.floor(Date.now() / 1000) + tokenResult.expiresIn
-              : undefined
-          )
-        }
-
-        res.writeHead(200, { 'Content-Type': 'text/html' })
-        res.end(makeCallbackHtml(
-          'Connected!',
-          `${providerId === 'openai' ? 'ChatGPT' : 'GitHub Copilot'} is now connected to Nyra. You can close this tab.`
-        ))
-
-        // Notify renderer to refresh provider list
-        if (!mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('providers:oauth-complete', { providerId, success: true })
-        }
-
-        cleanup()
-        resolve({
-          success: true,
+  try {
+    switch (providerId) {
+      case 'openai':
+        return await runOpenAIFlow(mainWindow)
+      case 'gemini':
+        return await runGeminiFlow(mainWindow)
+      case 'copilot':
+        return await startGitHubDeviceFlow(mainWindow)
+      default:
+        return {
+          success: false,
           providerId,
-          accessToken: tokenResult.accessToken,
-          refreshToken: tokenResult.refreshToken,
-          expiresIn: tokenResult.expiresIn,
-        })
-      } catch (err) {
-        res.writeHead(200, { 'Content-Type': 'text/html' })
-        res.end(makeCallbackHtml('Error', `Token exchange failed: ${String(err)}`))
-        cleanup()
-        resolve({ success: false, providerId, error: String(err) })
-      }
-    })
-
-    server.listen(CALLBACK_PORT, '127.0.0.1', () => {
-      console.log(`[OAuth] Callback server listening on http://127.0.0.1:${CALLBACK_PORT}`)
-      activeServer = server
-
-      // Build the authorize URL
-      const params = new URLSearchParams({
-        response_type: 'code',
-        client_id: config.clientId,
-        redirect_uri: CALLBACK_URL,
-        scope: config.scopes.join(' '),
-        state,
-        code_challenge: codeChallenge,
-        code_challenge_method: 'S256',
-        ...(config.extraAuthorizeParams ?? {}),
-      })
-
-      const authorizeUrl = `${config.authorizeUrl}?${params.toString()}`
-      console.log(`[OAuth] Opening browser for ${providerId}:`, authorizeUrl)
-      shell.openExternal(authorizeUrl)
-    })
-
-    server.on('error', (err) => {
-      console.error('[OAuth] Server error:', err)
-      resolve({ success: false, providerId, error: `Callback server error: ${String(err)}` })
-    })
-
-    // Auto-timeout after 5 minutes
-    setTimeout(() => {
-      if (activeServer === server) {
-        cleanup()
-        resolve({ success: false, providerId, error: 'OAuth flow timed out (5 min)' })
-      }
-    }, 5 * 60 * 1000)
-  })
+          error: `No OAuth flow available for provider "${providerId}". Use manual API key entry.`,
+        }
+    }
+  } catch (err) {
+    console.error(`[OAuth] Flow failed for ${providerId}:`, err)
+    return {
+      success: false,
+      providerId,
+      error: String(err),
+    }
+  } finally {
+    // Always release the mutex, even on error
+    releaseFlowLock()
+  }
 }
 
-// ── Token exchange ───────────────────────────────────────────────────────────
+// ── OpenAI Flow (three-step) ─────────────────────────────────────────────────
 
-async function exchangeCodeForToken(
-  config: OAuthProviderConfig,
-  code: string,
-  codeVerifier: string
-): Promise<{ accessToken: string; refreshToken?: string; expiresIn?: number }> {
-  const body = new URLSearchParams({
-    grant_type: 'authorization_code',
-    code,
-    redirect_uri: CALLBACK_URL,
-    client_id: config.clientId,
-    code_verifier: codeVerifier,
-  })
+async function runOpenAIFlow(mainWindow: BrowserWindow): Promise<OAuthResult> {
+  // Step 1: Acquire
+  console.log('[OAuth/OpenAI] Step 1: Acquiring token via PKCE...')
+  const tokens = await acquireCodexOAuthToken()
 
-  const resp = await fetch(config.tokenUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json',
-    },
-    body: body.toString(),
-  })
-
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => resp.statusText)
-    throw new Error(`Token exchange ${resp.status}: ${text}`)
+  // Step 2: Validate (with retry — token propagation can lag)
+  console.log('[OAuth/OpenAI] Step 2: Validating token...')
+  const valid = await validateWithRetry(() => validateCodexAccessToken(tokens.accessToken))
+  if (!valid) {
+    return {
+      success: false,
+      providerId: 'openai',
+      error: 'Token acquired but failed validation against /v1/models. The token may lack API access.',
+    }
   }
 
-  const data = await resp.json() as Record<string, unknown>
-  const accessToken = (data.access_token as string) ?? ''
-  const refreshToken = data.refresh_token as string | undefined
-  const expiresIn = data.expires_in as number | undefined
-
-  if (!accessToken) {
-    throw new Error('No access_token in response')
+  // Step 3: Save
+  console.log('[OAuth/OpenAI] Step 3: Saving credentials...')
+  const saved = saveApiKey('openai', tokens.accessToken)
+  if (!saved) {
+    return {
+      success: false,
+      providerId: 'openai',
+      error: 'Token acquired and validated, but failed to save to keychain. Is system encryption available?',
+    }
   }
+  syncOAuthToken(
+    'openai',
+    tokens.accessToken,
+    tokens.refreshToken,
+    tokens.expiresIn ? Math.floor(Date.now() / 1000) + tokens.expiresIn : undefined
+  )
 
-  return { accessToken, refreshToken, expiresIn }
+  // Notify renderer
+  notifyRenderer(mainWindow, 'openai', true)
+
+  console.log('[OAuth/OpenAI] Flow complete — token saved to keychain + auth-profiles')
+  return {
+    success: true,
+    providerId: 'openai',
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    expiresIn: tokens.expiresIn,
+  }
 }
 
-// ── GitHub Device Flow (alternative for Copilot) ─────────────────────────────
+// ── Gemini Flow (three-step) ─────────────────────────────────────────────────
 
+async function runGeminiFlow(mainWindow: BrowserWindow): Promise<OAuthResult> {
+  // Step 1: Acquire (uses CLI credentials if available, else built-in fallback)
+  console.log('[OAuth/Gemini] Step 1: Acquiring token via Google OAuth2...')
+  const tokens = await acquireGeminiOAuthToken()
+
+  // Step 2: Validate (with retry)
+  console.log('[OAuth/Gemini] Step 2: Validating token...')
+  const valid = await validateWithRetry(() => validateGeminiAccessToken(tokens.accessToken))
+  if (!valid) {
+    return {
+      success: false,
+      providerId: 'gemini',
+      error: 'Token acquired but failed validation. Please try again.',
+    }
+  }
+
+  // Step 3: Save
+  console.log('[OAuth/Gemini] Step 3: Saving credentials...')
+  const saved = saveApiKey('gemini', tokens.accessToken)
+  if (!saved) {
+    return {
+      success: false,
+      providerId: 'gemini',
+      error: 'Token acquired and validated, but failed to save to keychain. Is system encryption available?',
+    }
+  }
+  syncOAuthToken(
+    'gemini',
+    tokens.accessToken,
+    tokens.refreshToken,
+    tokens.expiresIn ? Math.floor(Date.now() / 1000) + tokens.expiresIn : undefined
+  )
+
+  notifyRenderer(mainWindow, 'gemini', true)
+
+  console.log('[OAuth/Gemini] Flow complete — token saved to keychain + auth-profiles')
+  return {
+    success: true,
+    providerId: 'gemini',
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    expiresIn: tokens.expiresIn,
+    // Surface provisioning warning so the UI can inform the user
+    warning: tokens.provisioningWarning,
+  }
+}
+
+// ── GitHub Copilot Device Flow ───────────────────────────────────────────────
+
+/**
+ * GitHub device flow for Copilot authentication.
+ * User visits github.com/login/device and enters a code.
+ * We poll for the token in the background.
+ *
+ * Note: Device flow doesn't use the shared callback port, but we still
+ * hold the flow mutex to prevent UI confusion from concurrent flows.
+ */
 export async function startGitHubDeviceFlow(
   mainWindow: BrowserWindow
 ): Promise<OAuthResult> {
-  const clientId = process.env.NYRA_GITHUB_CLIENT_ID ?? 'nyra-desktop'
+  const clientId = process.env.NYRA_GITHUB_CLIENT_ID ?? 'Iv1.b507a08c87ecfe98'
 
   try {
     // Step 1: Request device code
+    console.log('[OAuth/GitHub] Step 1: Requesting device code...')
     const deviceResp = await fetch('https://github.com/login/device/code', {
       method: 'POST',
       headers: {
@@ -299,7 +235,9 @@ export async function startGitHubDeviceFlow(
       }),
     })
 
-    if (!deviceResp.ok) throw new Error(`Device code request failed: ${deviceResp.status}`)
+    if (!deviceResp.ok) {
+      throw new Error(`Device code request failed: ${deviceResp.status}`)
+    }
 
     const deviceData = await deviceResp.json() as {
       device_code: string
@@ -318,10 +256,11 @@ export async function startGitHubDeviceFlow(
       })
     }
 
-    // Open browser for the user to enter the code
+    // Open browser for user to enter code
     shell.openExternal(deviceData.verification_uri)
 
     // Step 2: Poll for token
+    console.log('[OAuth/GitHub] Step 2: Polling for token...')
     const pollInterval = (deviceData.interval || 5) * 1000
     const deadline = Date.now() + (deviceData.expires_in * 1000)
 
@@ -345,16 +284,33 @@ export async function startGitHubDeviceFlow(
 
       if (tokenData.access_token) {
         const accessToken = tokenData.access_token as string
-        saveApiKey('copilot', accessToken)
-        syncOAuthToken('copilot', accessToken)
 
-        if (!mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('providers:oauth-complete', {
+        // Step 2b: Validate (with retry)
+        console.log('[OAuth/GitHub] Validating token...')
+        const valid = await validateWithRetry(() => validateGitHubToken(accessToken))
+        if (!valid) {
+          return {
+            success: false,
             providerId: 'copilot',
-            success: true,
-          })
+            error: 'Token received but failed validation against GitHub API.',
+          }
         }
 
+        // Step 3: Save
+        console.log('[OAuth/GitHub] Step 3: Saving credentials...')
+        const saved = saveApiKey('copilot', accessToken)
+        if (!saved) {
+          return {
+            success: false,
+            providerId: 'copilot',
+            error: 'Token acquired but failed to save to keychain.',
+          }
+        }
+        syncOAuthToken('copilot', accessToken)
+
+        notifyRenderer(mainWindow, 'copilot', true)
+
+        console.log('[OAuth/GitHub] Flow complete — token saved')
         return { success: true, providerId: 'copilot', accessToken }
       }
 
@@ -377,46 +333,48 @@ export async function startGitHubDeviceFlow(
   }
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── GitHub Token Validation ──────────────────────────────────────────────────
 
-function cleanup() {
-  if (activeServer) {
-    activeServer.close()
-    activeServer = null
-  }
-  if (_activeResolve) {
-    _activeResolve({ success: false, providerId: '', error: 'OAuth flow cancelled' })
-    _activeResolve = null
+async function validateGitHubToken(accessToken: string): Promise<boolean> {
+  try {
+    const resp = await fetch('https://api.github.com/user', {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/vnd.github+json',
+      },
+    })
+    if (resp.ok) {
+      const data = await resp.json() as { login?: string }
+      console.log(`[OAuth/GitHub] Token validated — user: ${data.login ?? 'unknown'}`)
+      return true
+    }
+    console.warn(`[OAuth/GitHub] Token validation failed: ${resp.status}`)
+    return false
+  } catch (err) {
+    console.warn('[OAuth/GitHub] Token validation error:', err)
+    return false
   }
 }
 
-function makeCallbackHtml(title: string, message: string): string {
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <title>Nyra — ${title}</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      display: flex; align-items: center; justify-content: center;
-      min-height: 100vh; margin: 0;
-      background: #0c0c0c; color: #e0e0e0;
-    }
-    .card {
-      text-align: center; padding: 48px;
-      background: #1a1a1a; border-radius: 16px;
-      border: 1px solid rgba(255,255,255,0.06);
-      max-width: 400px;
-    }
-    h1 { font-size: 24px; margin-bottom: 12px; }
-    p { color: #888; font-size: 14px; line-height: 1.6; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>${title}</h1>
-    <p>${message}</p>
-  </div>
-</body>
-</html>`
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function notifyRenderer(mainWindow: BrowserWindow, providerId: string, success: boolean) {
+  if (!mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('providers:oauth-complete', { providerId, success })
+  }
+}
+
+// ── Provider OAuth availability ──────────────────────────────────────────────
+
+/**
+ * Check which providers support OAuth in the current environment.
+ * Used by the renderer to decide whether to show "Sign in" vs "Get API key".
+ */
+export function getOAuthAvailability(): Record<string, boolean> {
+  return {
+    openai: true,                    // PKCE via official Codex public client ID
+    gemini: isGeminiCliAvailable(),  // Requires Gemini CLI installed
+    copilot: true,                   // Always available (device flow)
+    anthropic: false,                // No consumer OAuth — API key only
+  }
 }

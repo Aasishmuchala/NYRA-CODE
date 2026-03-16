@@ -1,29 +1,32 @@
 /**
- * useOpenClaw — WebSocket client hook for the OpenClaw Gateway  (v3)
+ * useOpenClaw — WebSocket client hook for the OpenClaw Gateway  (v4)
  *
- * v3 improvements over v2:
- *  • Dual event format: handles both JSON-RPC notifications AND gateway native events
- *    (the proxy translates responses but passes events through as-is)
+ * v4 — single source of truth:
+ *  • ELIMINATED the separate `activeSession` state that caused sync bugs
+ *  • Sessions array is the ONLY place messages live
+ *  • `activeSession` is derived via useMemo — can NEVER go out of sync
+ *  • `activeSessionId` (string) is the only thing that changes when switching sessions
+ *  • All message updates go through `setSessions` — one state, one truth
+ *
+ * v3 features retained:
+ *  • Dual event format: JSON-RPC notifications + gateway native events
  *  • Streaming token field name flexibility (token, content, text, delta)
+ *  • Token batching via requestAnimationFrame
  *  • 60s streaming safety timeout
  *  • Pending promise cleanup on WS close
- *  • Fixed premature setStreaming(false) in sendMessage finally block
- *  • RPC result fallback for chat.send response
- *
- * v2 features retained:
- *  • Token batching via requestAnimationFrame
  *  • Fast reconnect: 500 ms
  *  • WebSocket keepalive ping every 15 s
  *  • Offline message queue
  *  • Pin / unpin, color label, system prompt, branch, export, search
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-export type GatewayStatus = 'idle' | 'checking' | 'installing' | 'starting' | 'ready' | 'error'
-export type WsStatus      = 'connecting' | 'connected' | 'disconnected' | 'error'
-export type SessionColor  = 'indigo' | 'violet' | 'rose' | 'amber' | 'emerald' | 'cyan' | 'none'
+export type GatewayStatus   = 'idle' | 'checking' | 'installing' | 'starting' | 'ready' | 'error'
+export type WsStatus        = 'connecting' | 'connected' | 'disconnected' | 'error'
+export type SessionColor    = 'indigo' | 'violet' | 'rose' | 'amber' | 'emerald' | 'cyan' | 'none'
+export type StreamingPhase  = 'thinking' | 'generating' | 'tool-use' | null
 
 export interface ChatMessage {
   id: string
@@ -48,6 +51,18 @@ export interface Session {
   tags?: string[]
 }
 
+export interface WizardStep {
+  id: string
+  type: 'note' | 'select' | 'text' | 'confirm' | 'multiselect' | 'progress' | 'action'
+  title?: string
+  message?: string
+  options?: Array<{ value: string; label: string; hint?: string }>
+  initialValue?: unknown
+  placeholder?: string
+  sensitive?: boolean
+  executor?: 'gateway' | 'client'
+}
+
 interface RpcRequest {
   jsonrpc: '2.0'
   id: string
@@ -57,14 +72,12 @@ interface RpcRequest {
 
 // v3: Accept both JSON-RPC responses and gateway native frames
 interface IncomingMessage {
-  // JSON-RPC style (proxy-translated responses)
   jsonrpc?: '2.0'
   id?: string
   result?: unknown
   error?: { code: number; message: string }
   method?: string
   params?: unknown
-  // Gateway native style (events pass through as-is)
   type?: 'event' | 'res'
   event?: string
   payload?: unknown
@@ -80,10 +93,61 @@ interface QueuedMessage {
   content: string
   sessionId: string
   attachments?: ChatMessage['attachments']
+  model?: string
 }
 
 let rpcIdCounter = 1
 function newId() { return String(rpcIdCounter++) }
+
+/**
+ * Extract text from an OpenClaw message object.
+ * Messages can have: { text: "..." } or { content: [{ type:"text", text:"..." }, ...] }
+ * or { role: "assistant", content: "..." }
+ */
+/**
+ * Resolve a gateway session key to a local session id.
+ * The gateway uses compound keys like "agent:main:main" internally,
+ * but our local sessions may use the simple key "main".
+ * This function bridges the two formats.
+ */
+function resolveSessionKey(
+  key: string,
+  sessions: Session[],
+  streamingKey: string | null
+): string {
+  // 1. Direct match — most common case
+  if (sessions.some(s => s.id === key)) return key
+
+  // 2. If we're actively streaming to a local session, check if the gateway
+  //    key contains our local key (e.g., "agent:main:main" contains "main")
+  if (streamingKey && key.includes(streamingKey)) return streamingKey
+
+  // 3. Extract the middle segment from compound keys (agent:X:main → X)
+  const parts = key.split(':')
+  if (parts.length >= 2) {
+    const simple = parts[1]
+    if (sessions.some(s => s.id === simple)) return simple
+  }
+
+  // 4. Fallback: return the original key
+  return key
+}
+
+function extractTextFromMessage(message: Record<string, unknown> | undefined | null): string | null {
+  if (!message) return null
+  // Direct text field
+  if (typeof message.text === 'string') return message.text
+  // Direct content string
+  if (typeof message.content === 'string') return message.content
+  // Content array (OpenClaw standard format)
+  if (Array.isArray(message.content)) {
+    const textParts = (message.content as Array<Record<string, unknown>>)
+      .filter(c => c.type === 'text' && typeof c.text === 'string')
+      .map(c => c.text as string)
+    if (textParts.length > 0) return textParts.join('')
+  }
+  return null
+}
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 export function useOpenClaw() {
@@ -91,11 +155,23 @@ export function useOpenClaw() {
   const [log,          setLog]          = useState<string>('')
   const [wsUrl,        setWsUrl]        = useState<string>('ws://127.0.0.1:18789')
   const [wsStatus,     setWsStatus]     = useState<WsStatus>('disconnected')
-  const [sessions,     setSessions]     = useState<Session[]>([])
-  const [activeSession,setActiveSession]= useState<Session | null>(null)
-  const [streaming,    setStreaming]     = useState(false)
-  const [offlineQueue, setOfflineQueue] = useState<QueuedMessage[]>([])
+  const [streaming,       setStreaming]       = useState(false)
+  const [streamingPhase,  setStreamingPhase]  = useState<StreamingPhase>(null)
+  const [offlineQueue,    setOfflineQueue]    = useState<QueuedMessage[]>([])
 
+  // ── SINGLE SOURCE OF TRUTH ──────────────────────────────────────────────────
+  // Sessions array is the ONE place messages live.
+  // activeSessionId is just a pointer into the array.
+  // activeSession is DERIVED — never stale, never out of sync.
+  const [sessions,        setSessions]        = useState<Session[]>([])
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+
+  const activeSession = useMemo(
+    () => (activeSessionId ? sessions.find(s => s.id === activeSessionId) ?? null : null),
+    [sessions, activeSessionId]
+  )
+
+  // ── Refs ────────────────────────────────────────────────────────────────────
   const wsRef              = useRef<WebSocket | null>(null)
   const connectingRef      = useRef<boolean>(false)
   const pendingRef         = useRef<Map<string, PendingResolver>>(new Map())
@@ -105,10 +181,23 @@ export function useOpenClaw() {
   const tokenBufferRef     = useRef<Map<string, string>>(new Map())
   const rafRef             = useRef<number | null>(null)
   const offlineQueueRef    = useRef<QueuedMessage[]>([])
-  const streamTimeoutRef   = useRef<ReturnType<typeof setTimeout> | null>(null) // v3: safety timeout
+  const streamTimeoutRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
   const toolCallHandlerRef = useRef<((callId: string, toolName: string, params: Record<string, unknown>) => Promise<{ callId: string; result?: unknown; error?: string }>) | null>(null)
+  const fetchDebounceRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const messageSendingRef  = useRef<boolean>(false)
+  // Gate ws.onclose reconnects — no point reconnecting if the gateway hasn't come up yet
+  const gatewayReadyRef    = useRef(false)
+
+  // Stable ref for activeSessionId (for use inside callbacks without stale closures)
+  const activeSessionIdRef = useRef<string | null>(null)
+  activeSessionIdRef.current = activeSessionId
+
+  // Stable ref for sessions array (for use inside callbacks)
+  const sessionsRef = useRef(sessions)
+  sessionsRef.current = sessions
 
   // ── Flush batched tokens (rAF — one React update per frame) ─────────────────
+  // v4: Only updates sessions — activeSession derives automatically
   const flushTokens = useCallback(() => {
     rafRef.current = null
     if (tokenBufferRef.current.size === 0) return
@@ -123,24 +212,30 @@ export function useOpenClaw() {
       if (last?.role === 'assistant') msgs[msgs.length - 1] = { ...last, content: last.content + tok }
       return { ...s, messages: msgs }
     }))
-    setActiveSession(prev => {
-      if (!prev) return prev
-      const tok = updates.get(prev.id)
-      if (!tok) return prev
-      const msgs = [...prev.messages]
-      const last = msgs[msgs.length - 1]
-      if (last?.role === 'assistant') msgs[msgs.length - 1] = { ...last, content: last.content + tok }
-      return { ...prev, messages: msgs }
-    })
   }, [])
 
-  // v3: Helper to handle streaming token from either event format
+  // Ref for streaming phase to avoid stale closures in handleStreamToken
+  const streamingPhaseRef = useRef<StreamingPhase>(null)
+  streamingPhaseRef.current = streamingPhase
+
+  // Helper to handle streaming token from either event format
   const handleStreamToken = useCallback((sessionId: string, token: string) => {
     tokenBufferRef.current.set(sessionId, (tokenBufferRef.current.get(sessionId) ?? '') + token)
     if (!rafRef.current) rafRef.current = requestAnimationFrame(flushTokens)
+
+    // Auto-detect streaming phase from content
+    if (token.includes('<thinking>') || token.includes('<thinking')) {
+      setStreamingPhase('thinking')
+    } else if (token.includes('</thinking>')) {
+      setStreamingPhase('generating')
+    } else if (streamingPhaseRef.current === null) {
+      // First token and no thinking detected — must be generating
+      setStreamingPhase('generating')
+    }
   }, [flushTokens])
 
-  // v3: Helper to handle stream done from either event format
+  // Helper to handle stream done from either event format
+  // v4: Only updates sessions — activeSession derives automatically
   const handleStreamDone = useCallback((sessionId: string) => {
     // Flush remaining buffer immediately
     const remaining = tokenBufferRef.current.get(sessionId)
@@ -153,18 +248,15 @@ export function useOpenClaw() {
         if (last?.role === 'assistant') msgs[msgs.length - 1] = { ...last, content: last.content + remaining }
         return { ...s, messages: msgs }
       }))
-      setActiveSession(prev => {
-        if (!prev || prev.id !== sessionId) return prev
-        const msgs = [...prev.messages]
-        const last = msgs[msgs.length - 1]
-        if (last?.role === 'assistant') msgs[msgs.length - 1] = { ...last, content: last.content + remaining }
-        return { ...prev, messages: msgs }
-      })
     }
     if (streamingSessionRef.current === sessionId) {
       setStreaming(false)
+      setStreamingPhase(null)
       streamingSessionRef.current = null
     }
+    // Clear send guard immediately — the stream is done, state is final.
+    // fetchSessions merge logic now safely preserves messages from local state.
+    messageSendingRef.current = false
     if (streamTimeoutRef.current) { clearTimeout(streamTimeoutRef.current); streamTimeoutRef.current = null }
   }, [])
 
@@ -193,13 +285,20 @@ export function useOpenClaw() {
 
       ws.onopen = () => {
         setWsStatus('connected')
-        fetchSessions()
+        // Debounced fetch: only run once even if WS opens multiple times rapidly.
+        // Reduced from 200ms → 50ms for faster session list hydration.
+        if (fetchDebounceRef.current) clearTimeout(fetchDebounceRef.current)
+        fetchDebounceRef.current = setTimeout(() => {
+          if (!streamingSessionRef.current && !messageSendingRef.current) {
+            fetchSessions()
+          }
+        }, 50)
 
         // Keepalive ping every 15 s
         if (pingTimer.current) clearInterval(pingTimer.current)
         pingTimer.current = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ jsonrpc: '2.0', id: newId(), method: 'ping' }))
+            ws.send(JSON.stringify({ jsonrpc: '2.0', id: newId(), method: 'health', params: {} }))
           }
         }, 15_000)
 
@@ -210,7 +309,7 @@ export function useOpenClaw() {
           setOfflineQueue([])
           for (const msg of queue) {
             const id = newId()
-            ws.send(JSON.stringify({ jsonrpc: '2.0', id, method: 'chat.send', params: { sessionKey: msg.sessionId, message: msg.content, attachments: msg.attachments, idempotencyKey: `queue-${id}` } }))
+            ws.send(JSON.stringify({ jsonrpc: '2.0', id, method: 'chat.send', params: { sessionKey: msg.sessionId, message: msg.content, deliver: false, ...(msg.attachments?.length ? { attachments: msg.attachments } : {}), idempotencyKey: `queue-${id}` } }))
           }
         }
       }
@@ -219,44 +318,59 @@ export function useOpenClaw() {
         setWsStatus('disconnected')
         if (pingTimer.current) clearInterval(pingTimer.current)
         if (reconnectTimer.current) clearTimeout(reconnectTimer.current)
-        // v3: Clean up pending promises on close
+        // Clean up pending promises on close
         for (const [, p] of pendingRef.current) {
           p.reject(new Error('WebSocket disconnected'))
         }
         pendingRef.current.clear()
-        reconnectTimer.current = setTimeout(() => connect('ws.onclose-reconnect'), 500)
+        // Always try to reconnect — use longer delay if gateway isn't confirmed ready
+        const delay = gatewayReadyRef.current ? 500 : 3000
+        reconnectTimer.current = setTimeout(() => connect('ws.onclose-reconnect'), delay)
       }
 
       ws.onerror = () => setWsStatus('error')
 
       ws.onmessage = (event) => {
         try {
-          const msg: IncomingMessage = JSON.parse(event.data as string)
+          const raw = event.data as string
+          const msg: IncomingMessage = JSON.parse(raw)
 
-          // v3: Derive effective method — works for both JSON-RPC notifications
-          // and gateway native events that pass through the proxy untranslated
+          // Debug: log ALL incoming WS messages (truncated) to trace gateway communication
+          const preview = raw.length > 250 ? raw.slice(0, 250) + '…' : raw
+          if (msg.result !== 'pong') {
+            console.log(`[OpenClaw WS ←] ${preview}`)
+          }
+
           const effectiveMethod = msg.method ?? (msg.type === 'event' ? msg.event : undefined)
 
           // ── Streaming token — batch via rAF ────────────────────────────────
-          if (effectiveMethod === 'session.token') {
-            // v3: Accept multiple field names for the payload
+          if (effectiveMethod === 'session.token' || effectiveMethod === 'stream.token'
+            || effectiveMethod === 'message.delta' || effectiveMethod === 'content.delta') {
             const p = (msg.params ?? msg.payload ?? {}) as Record<string, unknown>
-            const sessionId = (p.sessionId ?? p.sessionKey ?? p.session_id) as string | undefined
+            const rawSid = (p.sessionId ?? p.sessionKey ?? p.session_id ?? p.session) as string | undefined
+            const sessionId = rawSid ? resolveSessionKey(rawSid, sessionsRef.current, streamingSessionRef.current) : undefined
             const token = (p.token ?? p.content ?? p.text ?? p.delta) as string | undefined
-            if (sessionId && token) handleStreamToken(sessionId, token)
+            if (sessionId && token) {
+              handleStreamToken(sessionId, token)
+            } else {
+              console.warn('[OpenClaw WS] Token event missing sessionId or token:', JSON.stringify(p).slice(0, 200))
+            }
             return
           }
 
           // ── Stream done ────────────────────────────────────────────────────
-          if (effectiveMethod === 'session.done') {
+          if (effectiveMethod === 'session.done' || effectiveMethod === 'stream.done'
+            || effectiveMethod === 'message.done' || effectiveMethod === 'content.done') {
             const p = (msg.params ?? msg.payload ?? {}) as Record<string, unknown>
-            const sessionId = (p.sessionId ?? p.sessionKey ?? p.session_id) as string | undefined
+            const rawSid = (p.sessionId ?? p.sessionKey ?? p.session_id ?? p.session) as string | undefined
+            const sessionId = rawSid ? resolveSessionKey(rawSid, sessionsRef.current, streamingSessionRef.current) : undefined
             if (sessionId) handleStreamDone(sessionId)
             return
           }
 
           // ── Tool call from AI — route to desktop tools handler ──────────
-          if (effectiveMethod === 'tool.call' || effectiveMethod === 'tool_call') {
+          if (effectiveMethod === 'tool.call' || effectiveMethod === 'tool_call' || effectiveMethod === 'tool.use') {
+            setStreamingPhase('tool-use')
             const p = (msg.params ?? msg.payload ?? {}) as Record<string, unknown>
             const callId   = (p.callId ?? p.call_id ?? p.id) as string
             const toolName = (p.name ?? p.tool ?? p.toolName ?? p.tool_name) as string
@@ -264,7 +378,6 @@ export function useOpenClaw() {
 
             if (callId && toolName && toolCallHandlerRef.current) {
               toolCallHandlerRef.current(callId, toolName, params).then((result) => {
-                // Send tool result back to gateway
                 if (wsRef.current?.readyState === WebSocket.OPEN) {
                   const rpcId = newId()
                   wsRef.current.send(JSON.stringify({
@@ -278,10 +391,108 @@ export function useOpenClaw() {
             return
           }
 
+          // ── OpenClaw 'agent' event — real-time token streaming ─────────
+          // Gateway sends: { type:"event", event:"agent", payload: {
+          //   stream: "assistant" | "lifecycle",
+          //   data: { text, delta } | { phase: "start"|"end" },
+          //   sessionKey, runId, seq } }
+          if (effectiveMethod === 'agent') {
+            const p = (msg.params ?? msg.payload ?? {}) as Record<string, unknown>
+            const stream = p.stream as string | undefined
+            const data = p.data as Record<string, unknown> | undefined
+            const rawSKey = (p.sessionKey ?? p.sessionId ?? p.session) as string | undefined
+            const sKey = rawSKey
+              ? resolveSessionKey(rawSKey, sessionsRef.current, streamingSessionRef.current)
+              : undefined
+
+            if (sKey && stream === 'assistant' && data?.delta) {
+              // Token-by-token streaming — feed delta to the token buffer
+              handleStreamToken(sKey, data.delta as string)
+            } else if (sKey && stream === 'lifecycle' && data?.phase === 'end') {
+              // Agent run completed — finalize the stream
+              // (Don't call handleStreamDone here — let the 'chat.final' event do it
+              //  so we get the full accumulated text for correctness)
+            }
+            return
+          }
+
+          // ── OpenClaw 'chat' event — the main streaming mechanism ──────
+          // Gateway sends: { type:"event", event:"chat", payload: { state, sessionKey, message, runId } }
+          // state: "delta" | "final" | "aborted" | "error"
+          if (effectiveMethod === 'chat') {
+            const p = (msg.params ?? msg.payload ?? {}) as Record<string, unknown>
+            const state = p.state as string | undefined
+            const rawSessionKey = (p.sessionKey ?? p.sessionId ?? p.session) as string | undefined
+            // Normalize: gateway uses compound keys like "agent:main:main"
+            // but our local sessions use simple keys like "main"
+            const sessionKey = rawSessionKey
+              ? resolveSessionKey(rawSessionKey, sessionsRef.current, streamingSessionRef.current)
+              : undefined
+            const message = p.message as Record<string, unknown> | undefined
+
+            if (sessionKey && state === 'delta') {
+              // chat.delta carries the FULL accumulated text (not a delta).
+              // If we're already streaming via 'agent' events (which send actual deltas),
+              // skip this to avoid double-counting. Only use chat.delta as a fallback
+              // if agent events aren't being used.
+              const text = extractTextFromMessage(message)
+              if (text && !streamingSessionRef.current) {
+                // Not streaming via agent events — use chat.delta as primary
+                handleStreamToken(sessionKey, text)
+              }
+            } else if (sessionKey && (state === 'final' || state === 'aborted')) {
+              // Final message — extract full content and set it
+              const text = extractTextFromMessage(message)
+              if (text) {
+                // Set the full content (not append) since delta may have accumulated
+                setSessions(prev => prev.map(s => {
+                  if (s.id !== sessionKey) return s
+                  const msgs = [...s.messages]
+                  const last = msgs[msgs.length - 1]
+                  if (last?.role === 'assistant') {
+                    // Use full text if longer than what we've accumulated
+                    const currentContent = (tokenBufferRef.current.get(sessionKey) ?? '') + (last.content ?? '')
+                    if (text.length >= currentContent.length) {
+                      msgs[msgs.length - 1] = { ...last, content: text }
+                    }
+                  }
+                  return { ...s, messages: msgs }
+                }))
+              }
+              handleStreamDone(sessionKey)
+            } else if (sessionKey && state === 'error') {
+              const errMsg = (p.errorMessage ?? 'Unknown error') as string
+              setSessions(prev => prev.map(s => {
+                if (s.id !== sessionKey) return s
+                const msgs = [...s.messages]
+                const last = msgs[msgs.length - 1]
+                if (last?.role === 'assistant' && last.content === '') {
+                  msgs[msgs.length - 1] = { ...last, content: `⚠️ ${errMsg}` }
+                }
+                return { ...s, messages: msgs }
+              }))
+              handleStreamDone(sessionKey)
+            }
+            return
+          }
+
+          // ── Catch-all: any event with session + content-like fields ──────
+          if (effectiveMethod && msg.type === 'event') {
+            const p = (msg.params ?? msg.payload ?? {}) as Record<string, unknown>
+            const rawSid = (p.sessionId ?? p.sessionKey ?? p.session_id ?? p.session) as string | undefined
+            const sid = rawSid ? resolveSessionKey(rawSid, sessionsRef.current, streamingSessionRef.current) : undefined
+            const tok = (p.token ?? p.content ?? p.text ?? p.delta) as string | undefined
+            if (sid && tok && streamingSessionRef.current === sid) {
+              console.log(`[OpenClaw WS] Catch-all token from event "${effectiveMethod}"`)
+              handleStreamToken(sid, tok)
+              return
+            }
+          }
+
           // Ping pong — ignore
           if (msg.result === 'pong') return
 
-          // ── RPC response (proxy-translated: { id, result/error }) ──────────
+          // ── RPC response ──────────────────────────────────────────────────
           if (msg.id) {
             const pending = pendingRef.current.get(msg.id)
             if (!pending) return
@@ -300,199 +511,375 @@ export function useOpenClaw() {
   }, [flushTokens, handleStreamToken, handleStreamDone])
 
   // ── JSON-RPC helper ──────────────────────────────────────────────────────────
-  const rpc = useCallback(<T>(method: string, params?: unknown): Promise<T> => {
+  const rpc = useCallback(<T>(method: string, params?: unknown, timeoutMs = 15_000): Promise<T> => {
     return new Promise((resolve, reject) => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
         reject(new Error('WebSocket not connected'))
         return
       }
       const id = newId()
-      pendingRef.current.set(id, { resolve: resolve as (v: unknown) => void, reject })
+
+      // Safety timeout — prevent indefinite hangs if response never arrives
+      const timer = setTimeout(() => {
+        if (pendingRef.current.has(id)) {
+          pendingRef.current.delete(id)
+          reject(new Error(`RPC timeout: ${method} (${timeoutMs}ms)`))
+        }
+      }, timeoutMs)
+
+      pendingRef.current.set(id, {
+        resolve: (v: unknown) => { clearTimeout(timer); resolve(v as T) },
+        reject:  (e: Error)   => { clearTimeout(timer); reject(e) },
+      })
       wsRef.current.send(JSON.stringify({ jsonrpc: '2.0', id, method, params } satisfies RpcRequest))
     })
   }, [])
 
   // ── Fetch sessions ────────────────────────────────────────────────────────────
+  // v4: Only updates `sessions` — activeSession derives automatically.
+  //     NEVER touches activeSessionId or activeSession directly.
   const fetchSessions = useCallback(async () => {
+    if (messageSendingRef.current) {
+      console.log('[OpenClaw] fetchSessions skipped — message send in flight')
+      return []
+    }
     try {
-      const result = await rpc<{ sessions: Array<{ sessionKey?: string; sessionId?: string; id?: string; title: string; updatedAt: number; model?: string }> }>('sessions.list')
-      const mapped: Session[] = (result?.sessions ?? []).map(s => ({
-        id: s.sessionKey ?? s.sessionId ?? s.id ?? '', title: s.title || 'New chat', model: s.model,
-        updatedAt: s.updatedAt, messages: []
-      }))
-      setSessions(prev => mapped.map(newS => {
-        const ex = prev.find(e => e.id === newS.id)
-        return ex ? { ...newS, pinned: ex.pinned, color: ex.color, tags: ex.tags, systemPrompt: ex.systemPrompt, messages: ex.messages } : newS
-      }))
+      const result = await rpc<Record<string, unknown>>('sessions.list')
+      console.log('[OpenClaw] sessions.list result:', JSON.stringify(result).slice(0, 500))
+      if (messageSendingRef.current) {
+        console.log('[OpenClaw] fetchSessions result discarded — message send started during RPC')
+        return []
+      }
+      // Accept sessions from various response shapes
+      const rawSessions = (result?.sessions ?? result?.data ?? result?.items ?? (Array.isArray(result) ? result : [])) as Array<Record<string, unknown>>
+      const mapped: Session[] = rawSessions.map((s: Record<string, unknown>) => {
+        // Gateway uses compound keys like "agent:main:main".
+        // Extract the simple key (middle segment) for our local session id,
+        // but keep the full key as a fallback reference.
+        const fullKey = (s.key ?? s.sessionKey ?? s.sessionId ?? s.id ?? '') as string
+        const parts = fullKey.split(':')
+        const simpleKey = parts.length >= 2 ? parts[1] : fullKey
+        return {
+          id: simpleKey || fullKey,
+          title: ((s.label ?? s.title) as string) || 'New chat',
+          model: s.model as string | undefined,
+          updatedAt: (s.updatedAt as number) ?? Date.now(),
+          messages: []
+        }
+      })
+      setSessions(prev => {
+        // Merge server sessions with local state. NEVER drop messages.
+        // Build map keeping the entry with the MOST messages for each ID
+        // (guards against duplicate IDs from race conditions).
+        const existingMap = new Map<string, Session>()
+        for (const s of prev) {
+          const existing = existingMap.get(s.id)
+          if (!existing || s.messages.length > existing.messages.length) {
+            existingMap.set(s.id, s)
+          }
+        }
+        const merged = mapped.map(newS => {
+          const ex = existingMap.get(newS.id)
+          if (ex) {
+            existingMap.delete(newS.id)
+            return { ...newS, pinned: ex.pinned, color: ex.color, tags: ex.tags, systemPrompt: ex.systemPrompt, model: ex.model ?? newS.model, messages: ex.messages }
+          }
+          return newS
+        })
+        // Keep local-only sessions that have messages
+        for (const [, localSession] of existingMap) {
+          if (localSession.messages.length > 0) {
+            merged.push(localSession)
+          }
+        }
+        return merged
+      })
+      // v4: No setActiveSession call at all! activeSession derives from sessions.
       return mapped
     } catch { return [] }
   }, [rpc])
 
   // ── Load session history ──────────────────────────────────────────────────────
+  // v4: Only updates sessions array
   const loadSessionHistory = useCallback(async (sessionId: string) => {
     try {
-      const result = await rpc<{ messages: Array<{ role: string; content: string; id: string; timestamp: number }> }>('sessions.history', { sessionKey: sessionId })
+      const result = await rpc<{ messages: Array<{ role: string; content: string; id: string; timestamp: number }> }>('chat.history', { sessionKey: sessionId, limit: 200 })
       const messages: ChatMessage[] = (result?.messages ?? []).map(m => ({
         id: m.id ?? String(Date.now()), role: m.role as 'user' | 'assistant',
         content: m.content, timestamp: m.timestamp ?? Date.now()
       }))
       setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, messages } : s))
-      setActiveSession(prev => prev?.id === sessionId ? { ...prev, messages } : prev)
       return messages
     } catch { return [] }
   }, [rpc])
 
   // ── Create session ────────────────────────────────────────────────────────────
+  // v4: Adds to sessions array + sets activeSessionId
   const createSession = useCallback(async (opts?: {
     model?: string; incognito?: boolean; systemPrompt?: string
     projectId?: string; branchedFrom?: string
   }): Promise<Session> => {
-    const result = await rpc<{ sessionKey?: string; sessionId: string }>('sessions.create', { model: opts?.model })
+    // OpenClaw doesn't have sessions.create — use sessions.reset to clear
+    // the current session, or just create a local session with 'main' key.
+    // New sessions are implicitly created by chat.send with a sessionKey.
+    const sessionKey = 'main'
+    try {
+      await rpc('sessions.reset', { key: sessionKey })
+    } catch {
+      // sessions.reset may fail if no session exists yet — that's fine
+    }
     const session: Session = {
-      id: result.sessionKey ?? result.sessionId, title: 'New chat', updatedAt: Date.now(), messages: [],
+      id: sessionKey, title: 'New chat', updatedAt: Date.now(), messages: [],
       model: opts?.model, incognito: opts?.incognito, systemPrompt: opts?.systemPrompt,
       projectId: opts?.projectId, branchedFrom: opts?.branchedFrom, pinned: false
     }
-    setSessions(prev => [session, ...prev])
-    setActiveSession(session)
+    setSessions(prev => prev.map(s => s.id === sessionKey ? session : s).concat(
+      prev.some(s => s.id === sessionKey) ? [] : [session]
+    ))
+    setActiveSessionId(session.id)
     return session
   }, [rpc])
 
   // ── Select session ────────────────────────────────────────────────────────────
   const selectSession = useCallback(async (sessionId: string) => {
-    const found = sessions.find(s => s.id === sessionId)
+    const found = sessionsRef.current.find(s => s.id === sessionId)
     if (found) {
-      setActiveSession(found)
+      setActiveSessionId(sessionId)
       if (found.messages.length === 0) await loadSessionHistory(sessionId)
     }
-  }, [sessions, loadSessionHistory])
+  }, [loadSessionHistory])
 
   // ── Send message (with offline queue + local fallback) ─────────────────────
   const sendMessage = useCallback(async (
     content: string,
-    attachments?: ChatMessage['attachments']
+    attachments?: ChatMessage['attachments'],
+    model?: string
   ): Promise<void> => {
-    let session = activeSession
+    // Read current active session from refs (not stale closure)
+    const currentId = activeSessionIdRef.current
+    let session = currentId ? sessionsRef.current.find(s => s.id === currentId) ?? null : null
+
+    // If no active session, create one locally using 'main' as the session key.
+    // OpenClaw doesn't have sessions.create — sessions are implicitly created
+    // when you send chat.send with a new sessionKey. The default key is 'main'.
     if (!session) {
-      try {
-        session = await createSession()
-      } catch {
-        // WS not connected — create local session so the user can still type
-        // Messages will be queued and sent when WS reconnects
-        const localId = `agent:main:main` // Default OpenClaw session
-        session = {
-          id: localId, title: content.slice(0, 45), updatedAt: Date.now(), messages: [],
-          pinned: false
-        }
-        setSessions(prev => [session!, ...prev])
-        setActiveSession(session)
+      const sessionKey = 'main'
+      session = {
+        id: sessionKey, title: content.slice(0, 45), updatedAt: Date.now(), messages: [],
+        pinned: false, color: 'none' as SessionColor, tags: [],
       }
+      setSessions(prev => {
+        // Don't create a duplicate if 'main' already exists
+        if (prev.some(s => s.id === sessionKey)) return prev
+        return [session!, ...prev]
+      })
+      setActiveSessionId(sessionKey)
+      activeSessionIdRef.current = sessionKey
     }
 
     const userMsg: ChatMessage      = { id: `user-${Date.now()}`, role: 'user', content, timestamp: Date.now(), attachments }
     const assistantMsg: ChatMessage = { id: `asst-${Date.now()}`, role: 'assistant', content: '', timestamp: Date.now() }
 
-    const updated: Session = {
-      ...session,
-      messages: [...session.messages, userMsg, assistantMsg],
-      title: session.messages.length === 0 ? content.slice(0, 45) : session.title,
-      updatedAt: Date.now()
-    }
-    setActiveSession(updated)
-    setSessions(prev => prev.map(s => s.id === session!.id ? updated : s))
+    // Guard: prevent fetchSessions from overwriting local state during send
+    messageSendingRef.current = true
+
+    // v4: Only update sessions array — activeSession derives automatically
+    const sessionId = session.id
+    setSessions(prev => prev.map(s => {
+      if (s.id !== sessionId) return s
+      return {
+        ...s,
+        messages: [...s.messages, userMsg, assistantMsg],
+        title: s.messages.length === 0 ? content.slice(0, 45) : s.title,
+        updatedAt: Date.now()
+      }
+    }))
+    setActiveSessionId(sessionId)
     setStreaming(true)
-    streamingSessionRef.current = session.id
+    setStreamingPhase('thinking')    // Start in thinking phase — will switch to generating on first non-thinking token
+    streamingSessionRef.current = sessionId
 
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      // Queue message for delivery when WS reconnects
       console.log('[OpenClaw] WS not connected — queuing message')
-      offlineQueueRef.current.push({ content, sessionId: session.id, attachments })
+      offlineQueueRef.current.push({ content, sessionId, attachments, model: model || session.model })
       setOfflineQueue([...offlineQueueRef.current])
-      handleStreamToken(session.id, '⏳ Gateway not connected. Message queued — it will be sent automatically when the connection is restored.')
-      handleStreamDone(session.id)
+      handleStreamToken(sessionId, '⏳ Gateway not connected. Message queued — it will be sent automatically when the connection is restored.')
+      // Reset send guard immediately — no streaming to protect in offline path
+      messageSendingRef.current = false
+      handleStreamDone(sessionId)
       return
     }
 
-    // v3: Safety timeout — auto-clear streaming after 60s
+    // Safety timeout — auto-clear streaming after 20s (reduced from 30s for snappier UX).
+    // If no tokens arrive at all, the user shouldn't stare at a spinner for 30s.
     if (streamTimeoutRef.current) clearTimeout(streamTimeoutRef.current)
     streamTimeoutRef.current = setTimeout(() => {
       if (streamingSessionRef.current) {
-        console.warn('[OpenClaw] Streaming safety timeout — clearing')
+        console.warn('[OpenClaw] Streaming safety timeout (20s) — clearing')
+        // Add a fallback message so the user knows what happened
+        setSessions(prev => prev.map(s => {
+          if (s.id !== sessionId) return s
+          const msgs = [...s.messages]
+          const last = msgs[msgs.length - 1]
+          if (last?.role === 'assistant' && last.content === '') {
+            msgs[msgs.length - 1] = { ...last, content: '⏳ No response received. The model may be loading or the gateway may need a restart. Try sending your message again.' }
+          }
+          return { ...s, messages: msgs }
+        }))
         setStreaming(false)
         streamingSessionRef.current = null
+        messageSendingRef.current = false
       }
-    }, 60_000)
+    }, 20_000)
 
+    // Fire-and-forget: Many gateways only respond via streaming events
+    // (session.token / session.done), NOT with a direct RPC response.
+    // Using rpc() here would always timeout because no { type:"res" } comes back.
+    // Instead, send the request directly and let streaming events handle the flow.
     try {
-      // v3: Don't set streaming false in finally — let session.done handle it
-      const result = await rpc<unknown>('chat.send', {
-        sessionKey: session.id,
-        message: content,
-        attachments,
-        idempotencyKey: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-      })
-      // v3: RPC resolves when gateway acknowledges the send, not when streaming is done.
-      // Streaming tokens arrive via session.token events and end with session.done.
-      // If result includes the response directly (non-streaming mode), handle it:
-      if (result && typeof result === 'object' && 'content' in (result as Record<string, unknown>)) {
-        const r = result as { content?: string; sessionId?: string }
-        if (r.content) {
-          handleStreamDone(session.id)
-        }
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        throw new Error('WebSocket not connected')
       }
+      const chatId = String(rpcIdCounter++)
+      // OpenClaw gateway params for chat.send
+      // Format: { sessionKey, message, deliver?, idempotencyKey?, attachments? }
+      // NOTE: model is NOT sent per-message — it's configured via auth-profiles.
+      // Sending 'model' causes gateway error: "unexpected property 'model'"
+      const chatParams: Record<string, unknown> = {
+        sessionKey: sessionId,
+        message: content,
+        deliver: false,
+        idempotencyKey: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        ...(attachments?.length ? { attachments } : {}),
+      }
+      console.log(`[OpenClaw] Sending chat.send (id=${chatId}, session=${sessionId}):`, JSON.stringify(chatParams).slice(0, 200))
+      wsRef.current.send(JSON.stringify({
+        jsonrpc: '2.0',
+        id: chatId,
+        method: 'chat.send',
+        params: chatParams
+      }))
+
+      // Register a pending resolver so that IF the gateway sends a direct
+      // { type:"res" } response (non-streaming mode), we capture the content.
+      // Without this, direct replies show as blank assistant messages.
+      pendingRef.current.set(chatId, {
+        resolve: (v: unknown) => {
+          const r = v as Record<string, unknown> | null
+          console.log('[OpenClaw] chat.send response:', JSON.stringify(r).slice(0, 300))
+          // Extract content from various possible response shapes
+          const fullContent = (r?.content ?? r?.message ?? r?.text ??
+            (r?.payload as Record<string, unknown>)?.content) as string | undefined
+          if (fullContent) {
+            // Gateway returned full response directly — inject into assistant msg
+            setSessions(prev => prev.map(s => {
+              if (s.id !== sessionId) return s
+              const msgs = [...s.messages]
+              const last = msgs[msgs.length - 1]
+              if (last?.role === 'assistant') {
+                msgs[msgs.length - 1] = { ...last, content: last.content + fullContent }
+              }
+              return { ...s, messages: msgs }
+            }))
+            handleStreamDone(sessionId)
+          }
+          // If no content, this was just an ack — streaming events will follow
+        },
+        reject: (err: Error) => {
+          // Gateway explicitly rejected chat.send — show the error to the user
+          // instead of silently swallowing it. This is the #1 reason for
+          // "No response received" when the gateway rejects our message.
+          console.error('[OpenClaw] chat.send REJECTED:', err.message)
+          setSessions(prev => prev.map(s => {
+            if (s.id !== sessionId) return s
+            const msgs = [...s.messages]
+            const last = msgs[msgs.length - 1]
+            if (last?.role === 'assistant' && last.content === '') {
+              msgs[msgs.length - 1] = { ...last, content: `⚠️ Gateway error: ${err.message}\n\nThis usually means the session or model isn't recognized. Try starting a new chat.` }
+            }
+            return { ...s, messages: msgs }
+          }))
+          handleStreamDone(sessionId)
+        },
+      })
+      setTimeout(() => { pendingRef.current.delete(chatId) }, 30_000)
     } catch (err) {
-      // On error, clear streaming state
       console.error('[OpenClaw] chat.send error:', err)
+      // Show error to user as assistant response
+      handleStreamToken(sessionId, `⚠️ Failed to send: ${(err as Error).message}`)
       setStreaming(false)
       streamingSessionRef.current = null
+      messageSendingRef.current = false
       if (streamTimeoutRef.current) { clearTimeout(streamTimeoutRef.current); streamTimeoutRef.current = null }
     }
-  }, [activeSession, createSession, rpc, handleStreamDone])
+  }, [rpc, handleStreamDone, handleStreamToken])
 
   // ── Pin / unpin ────────────────────────────────────────────────────────────────
+  // v4: All session mutations only touch sessions array
   const pinSession = useCallback((sessionId: string) => {
     setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, pinned: !s.pinned } : s))
-    setActiveSession(prev => prev?.id === sessionId ? { ...prev, pinned: !prev.pinned } : prev)
   }, [])
 
-  // ── Color label ───────────────────────────────────────────────────────────────
   const setSessionColor = useCallback((sessionId: string, color: SessionColor) => {
     setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, color } : s))
-    setActiveSession(prev => prev?.id === sessionId ? { ...prev, color } : prev)
   }, [])
 
-  // ── System prompt ─────────────────────────────────────────────────────────────
   const setSessionSystemPrompt = useCallback((sessionId: string, prompt: string) => {
     setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, systemPrompt: prompt } : s))
-    setActiveSession(prev => prev?.id === sessionId ? { ...prev, systemPrompt: prompt } : prev)
   }, [])
 
-  // ── Per-session model override ────────────────────────────────────────────────
-  const setSessionModel = useCallback((sessionId: string, model: string) => {
+  const setSessionModel = useCallback(async (sessionId: string, model: string) => {
+    // 1. Update local UI state immediately for responsiveness
     setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, model } : s))
-    setActiveSession(prev => prev?.id === sessionId ? { ...prev, model } : prev)
-  }, [])
 
-  // ── Rename ────────────────────────────────────────────────────────────────────
+    // 2. Translate UI model ID → OpenClaw format (e.g. "openai/gpt-5.4" → "openai-codex/gpt-5.4")
+    const MODEL_PREFIX_MAP: Record<string, string> = {
+      openai: 'openai-codex', gemini: 'google-gemini', copilot: 'github-copilot',
+    }
+    let openclawModel = model
+    if (model !== 'auto' && model.includes('/')) {
+      const [prefix, ...rest] = model.split('/')
+      const mapped = MODEL_PREFIX_MAP[prefix]
+      if (mapped) openclawModel = `${mapped}/${rest.join('/')}`
+    }
+
+    // 3. Patch the gateway session — THIS is the correct way to switch models.
+    //    sessions.patch sets modelOverride/providerOverride on the session entry,
+    //    which the gateway uses for all subsequent chat.send calls on this session.
+    if (model !== 'auto') {
+      try {
+        await rpc('sessions.patch', { key: sessionId, model: openclawModel })
+        console.log(`[OpenClaw] ✅ Model switched via sessions.patch: ${model} → ${openclawModel} (session=${sessionId})`)
+      } catch (err) {
+        console.warn('[OpenClaw] sessions.patch failed, falling back to auth-profiles:', err)
+      }
+    }
+
+    // 4. Also update auth-profiles as a fallback (for new sessions / default model)
+    try {
+      await window.nyra?.providers?.switchModel(model)
+    } catch { /* best effort */ }
+  }, [rpc])
+
   const renameSession = useCallback((sessionId: string, title: string) => {
     setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title } : s))
-    setActiveSession(prev => prev?.id === sessionId ? { ...prev, title } : prev)
   }, [])
 
-  // ── Delete ────────────────────────────────────────────────────────────────────
   const deleteSession = useCallback(async (sessionId: string) => {
     try { await rpc('sessions.delete', { sessionKey: sessionId }) } catch { /* gateway may not support */ }
     setSessions(prev => prev.filter(s => s.id !== sessionId))
-    setActiveSession(prev => prev?.id === sessionId ? null : prev)
+    // If the deleted session was active, clear the pointer
+    setActiveSessionId(prev => prev === sessionId ? null : prev)
   }, [rpc])
 
   // ── Branch (fork) session ─────────────────────────────────────────────────────
   const branchSession = useCallback(async (fromSessionId: string, fromMsgIndex: number): Promise<Session> => {
-    const source = sessions.find(s => s.id === fromSessionId)
+    const source = sessionsRef.current.find(s => s.id === fromSessionId)
     if (!source) throw new Error('Session not found')
-    const result = await rpc<{ sessionKey?: string; sessionId: string }>('sessions.create', { model: source.model })
+    // OpenClaw doesn't have sessions.create — create a local branch with a unique key
+    const branchKey = `branch-${Date.now()}`
     const session: Session = {
-      id: result.sessionKey ?? result.sessionId,
+      id: branchKey,
       title: `↗ ${source.title.slice(0, 35)}`,
       updatedAt: Date.now(),
       messages: source.messages.slice(0, fromMsgIndex + 1),
@@ -503,9 +890,9 @@ export function useOpenClaw() {
       pinned: false
     }
     setSessions(prev => [session, ...prev])
-    setActiveSession(session)
+    setActiveSessionId(session.id)
     return session
-  }, [sessions, rpc])
+  }, [])
 
   // ── Export to Markdown ────────────────────────────────────────────────────────
   const exportSessionMarkdown = useCallback((session: Session): string => {
@@ -528,7 +915,7 @@ export function useOpenClaw() {
     if (!query.trim()) return []
     const q = query.toLowerCase()
     const results: Array<{ session: Session; matchedMsg?: ChatMessage; score: number }> = []
-    for (const s of sessions) {
+    for (const s of sessionsRef.current) {
       const titleMatch = (s.title || '').toLowerCase().includes(q)
       if (titleMatch) results.push({ session: s, score: 2 })
       for (const m of s.messages) {
@@ -539,22 +926,115 @@ export function useOpenClaw() {
       }
     }
     return results.sort((a, b) => b.score - a.score).slice(0, 20)
-  }, [sessions])
+  }, [])
 
   // ── Tool call handler registration ────────────────────────────────────────────
   const setToolCallHandler = useCallback((handler: ((callId: string, toolName: string, params: Record<string, unknown>) => Promise<{ callId: string; result?: unknown; error?: string }>) | null) => {
     toolCallHandlerRef.current = handler
   }, [])
 
-  // Register tools with gateway (tells the AI what tools are available)
   const registerTools = useCallback(async (tools: ReadonlyArray<{ name: string; description: string; parameters: unknown }>) => {
     try {
       await rpc('tools.register', { tools })
       console.log('[OpenClaw] Registered', tools.length, 'desktop tools')
     } catch (err) {
-      // Gateway may not support tools.register yet — that's fine, tools will
-      // still work if the gateway sends tool.call events based on system prompt
       console.warn('[OpenClaw] tools.register not supported:', err)
+    }
+  }, [rpc])
+
+  // ── Fetch dynamic model catalog from gateway ─────────────────────────────────
+  const fetchModelCatalog = useCallback(async (): Promise<Array<{ id: string; name: string; provider: string; contextWindow?: number; reasoning?: boolean }>> => {
+    try {
+      // Try gateway RPC first (most accurate, includes all configured providers)
+      const catalog = await rpc<Array<{ id: string; name: string; provider: string; contextWindow?: number; reasoning?: boolean }>>('models.list', {})
+      if (Array.isArray(catalog) && catalog.length > 0) {
+        console.log(`[OpenClaw] Fetched ${catalog.length} models from gateway`)
+        return catalog
+      }
+    } catch (err) {
+      console.warn('[OpenClaw] models.list RPC failed, trying IPC fallback:', err)
+    }
+    // Fallback: IPC to main process (which also calls gateway via separate WS)
+    try {
+      const catalog = await window.nyra?.openclaw?.modelCatalog?.()
+      if (Array.isArray(catalog) && catalog.length > 0) {
+        console.log(`[OpenClaw] Fetched ${catalog.length} models via IPC`)
+        return catalog
+      }
+    } catch {
+      console.warn('[OpenClaw] IPC model catalog fallback failed')
+    }
+    return [] // empty = use hardcoded fallback in ModelSelector
+  }, [rpc])
+
+  // ── Patch session config (model, thinking level, etc.) ──────────────────────
+  const patchSession = useCallback(async (sessionId: string, patch: Record<string, unknown>) => {
+    try {
+      return await rpc('sessions.patch', { key: sessionId, ...patch })
+    } catch (err) {
+      console.warn('[OpenClaw] sessions.patch failed:', err)
+      return null
+    }
+  }, [rpc])
+
+  // ── Wizard RPC methods (onboarding flow) ─────────────────────────────────────
+  const wizardStart = useCallback(async (mode: 'local' | 'remote' = 'local', workspace?: string) => {
+    try {
+      return await rpc<{ sessionId: string; done: boolean; step?: WizardStep; status?: string; error?: string }>(
+        'wizard.start', { mode, ...(workspace ? { workspace } : {}) }
+      )
+    } catch (err) {
+      console.warn('[OpenClaw] wizard.start failed:', err)
+      return { sessionId: '', done: true, error: String(err) }
+    }
+  }, [rpc])
+
+  const wizardNext = useCallback(async (sessionId: string, answer?: { stepId?: string; value?: unknown }) => {
+    try {
+      return await rpc<{ done: boolean; step?: WizardStep; status?: string; error?: string }>(
+        'wizard.next', { sessionId, ...(answer ? { answer } : {}) }
+      )
+    } catch (err) {
+      console.warn('[OpenClaw] wizard.next failed:', err)
+      return { done: true, error: String(err) }
+    }
+  }, [rpc])
+
+  const wizardCancel = useCallback(async (sessionId: string) => {
+    try {
+      return await rpc<{ status: string; error?: string }>('wizard.cancel', { sessionId })
+    } catch (err) {
+      console.warn('[OpenClaw] wizard.cancel failed:', err)
+      return { status: 'error', error: String(err) }
+    }
+  }, [rpc])
+
+  // ── Config RPC methods ──────────────────────────────────────────────────────
+  const configGet = useCallback(async () => {
+    try {
+      return await rpc<{ config: Record<string, unknown>; schema: Record<string, unknown>; hash: string }>('config.get', {})
+    } catch (err) {
+      console.warn('[OpenClaw] config.get failed:', err)
+      return null // config read failures are expected when gateway is offline
+    }
+  }, [rpc])
+
+  const configPatch = useCallback(async (raw: string, options?: { sessionKey?: string; note?: string }) => {
+    try {
+      return await rpc<{ ok: boolean; config: Record<string, unknown>; path: string }>('config.patch', { raw, ...options })
+    } catch (err) {
+      console.warn('[OpenClaw] config.patch failed:', err)
+      throw new Error(`Config patch failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [rpc])
+
+  // ── Channel status ──────────────────────────────────────────────────────────
+  const channelsStatus = useCallback(async () => {
+    try {
+      return await rpc<Record<string, unknown>>('channels.status', {})
+    } catch (err) {
+      console.warn('[OpenClaw] channels.status failed:', err)
+      return null // status read failures are expected when gateway is offline
     }
   }, [rpc])
 
@@ -564,65 +1044,122 @@ export function useOpenClaw() {
     window.nyra.openclaw.restart()
   }, [])
 
+  // ── Soft reconnect (close WS so it auto-reconnects with new config) ─────────
+  // Used after model switch — forces any active stream to end cleanly first,
+  // preventing stale streaming state from leaking into the new connection.
+  const reconnect = useCallback(() => {
+    console.log('[OpenClaw] Soft reconnect — closing WS to pick up new config')
+
+    // Force-end any active stream so the new connection starts with a clean slate
+    if (streamingSessionRef.current) {
+      const staleSessionId = streamingSessionRef.current
+      console.log('[OpenClaw] Ending stale stream for session', staleSessionId, 'before reconnect')
+      // Append notice to the last assistant message so the user knows what happened
+      setSessions(prev => prev.map(s => {
+        if (s.id !== staleSessionId) return s
+        const msgs = [...s.messages]
+        const last = msgs[msgs.length - 1]
+        if (last?.role === 'assistant') {
+          msgs[msgs.length - 1] = { ...last, content: last.content + '\n\n*[Model switched — reconnecting...]*' }
+        }
+        return { ...s, messages: msgs }
+      }))
+      setStreaming(false)
+      setStreamingPhase(null)
+      streamingSessionRef.current = null
+      messageSendingRef.current = false
+      if (streamTimeoutRef.current) { clearTimeout(streamTimeoutRef.current); streamTimeoutRef.current = null }
+    }
+
+    wsRef.current?.close()
+    // The onclose handler will auto-reconnect in 500ms with fresh auth-profiles
+  }, [])
+
+  // ── v4: Compatibility shim — setActiveSession that works with the old API ────
+  // Some external callers (App.tsx) may call setActiveSession(session).
+  // We translate that to setActiveSessionId(session.id) + ensure session is in array.
+  const setActiveSession = useCallback((sessionOrNull: Session | null) => {
+    if (!sessionOrNull) {
+      setActiveSessionId(null)
+    } else {
+      // Make sure the session exists in the array
+      setSessions(prev => {
+        if (prev.some(s => s.id === sessionOrNull.id)) return prev
+        return [sessionOrNull, ...prev]
+      })
+      setActiveSessionId(sessionOrNull.id)
+    }
+  }, [])
+
   // ── Main process status listeners ─────────────────────────────────────────────
   useEffect(() => {
+    const cleanups: Array<() => void> = []
+
+    const mapStatus = (s: string): GatewayStatus =>
+      s === 'running'    ? 'ready' :
+      s === 'checking'   ? 'checking' :
+      s === 'installing' ? 'installing' :
+      s === 'starting'   ? 'starting' :
+      s === 'error'      ? 'error' : 'idle'
+
     window.nyra.openclaw.getStatus().then((s: string) => {
-      const mapped: GatewayStatus =
-        s === 'running'    ? 'ready' :
-        s === 'checking'   ? 'checking' :
-        s === 'installing' ? 'installing' :
-        s === 'starting'   ? 'starting' :
-        s === 'error'      ? 'error' : 'idle'
-      setStatus(mapped)
-      if (s === 'running') connect('getStatus.then')
+      setStatus(mapStatus(s))
+      if (s === 'running') {
+        gatewayReadyRef.current = true
+        connect('getStatus.then')
+      }
     }).catch(() => {})
 
-    window.nyra.openclaw.onStatusChange((s: string) => {
-      const mapped: GatewayStatus =
-        s === 'running'    ? 'ready' :
-        s === 'checking'   ? 'checking' :
-        s === 'installing' ? 'installing' :
-        s === 'starting'   ? 'starting' :
-        s === 'error'      ? 'error' : 'idle'
+    cleanups.push(window.nyra.openclaw.onStatusChange((s: string) => {
+      const mapped = mapStatus(s)
       setStatus(mapped)
-      if (s === 'running') connect('onStatusChange')
-    })
+      if (s === 'running') {
+        gatewayReadyRef.current = true
+        connect('onStatusChange')
+      } else if (s === 'stopped' || s === 'error') {
+        gatewayReadyRef.current = false
+      }
+    }))
 
-    window.nyra.openclaw.onLog?.((line: string)        => setLog(line))
-    window.nyra.openclaw.onInstallLog?.((line: string) => setLog(line))
-    window.nyra.openclaw.onReady(() => { setStatus('ready'); connect('onReady') })
-    window.nyra.openclaw.onError?.((msg: string) => { setStatus('error'); setLog(msg) })
+    cleanups.push(window.nyra.openclaw.onLog?.((line: string)        => setLog(line)))
+    cleanups.push(window.nyra.openclaw.onInstallLog?.((line: string) => setLog(line)))
+    cleanups.push(window.nyra.openclaw.onReady(() => {
+      setStatus('ready')
+      gatewayReadyRef.current = true
+      connect('onReady')
+    }))
+    cleanups.push(window.nyra.openclaw.onError?.((msg: string) => { setStatus('error'); setLog(msg) }))
 
-    // Always try WS connection immediately — the proxy may be up even if
-    // the OpenClawManager hasn't emitted 'running' yet
-    connect('useEffect-direct')
+    // NOTE: Do NOT call connect('useEffect-direct') here — we wait for the
+    // gateway to report 'running' before attempting to connect. Connecting
+    // prematurely starts a fast connect/disconnect loop against the proxy
+    // because the gateway isn't listening yet on port 18789.
 
-    // Safety net: if status is still not 'ready' after 3s but WS isn't connected,
-    // force another connection attempt (covers cases where status events are missed)
+    // Single safety fallback: if after 12 s the gateway hasn't reported
+    // 'running' via events (IPC drop, timing issue), try once.
     const safetyTimer = setTimeout(() => {
-      connect('safety-fallback-3s')
-    }, 3_000)
-
-    // Second safety net at 8s — covers slow gateway startups
-    const safetyTimer2 = setTimeout(() => {
-      connect('safety-fallback-8s')
-    }, 8_000)
+      if (!gatewayReadyRef.current) {
+        console.log('[OpenClaw] Safety fallback at 12s — trying connect')
+        connect('safety-fallback-12s')
+      }
+    }, 12_000)
 
     return () => {
       clearTimeout(safetyTimer)
-      clearTimeout(safetyTimer2)
       wsRef.current?.close()
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current)
       if (pingTimer.current) clearInterval(pingTimer.current)
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
       if (streamTimeoutRef.current) clearTimeout(streamTimeoutRef.current)
-      window.nyra.openclaw.removeAllListeners()
+      if (fetchDebounceRef.current) clearTimeout(fetchDebounceRef.current)
+      // Scoped cleanup — only removes THIS hook's listeners, not SettingsPanel's
+      cleanups.forEach(fn => fn?.())
     }
   }, [connect])
 
   return {
     // State
-    status, log, wsUrl, wsStatus, streaming, sessions, activeSession, offlineQueue,
+    status, log, wsUrl, wsStatus, connected: (wsStatus === 'connected'), streaming, streamingPhase, sessions, activeSession, offlineQueue,
     // Core
     sendMessage, selectSession, createSession, fetchSessions, setActiveSession,
     // Session management
@@ -631,7 +1168,13 @@ export function useOpenClaw() {
     // Export / search
     exportSessionMarkdown, searchSessions,
     // Gateway
-    restart,
+    restart, reconnect,
+    // Model catalog + session patching
+    fetchModelCatalog, patchSession,
+    // Wizard (onboarding)
+    wizardStart, wizardNext, wizardCancel,
+    // Config + channels
+    configGet, configPatch, channelsStatus,
     // Desktop tools
     setToolCallHandler, registerTools,
   }

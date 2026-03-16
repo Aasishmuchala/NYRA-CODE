@@ -1,9 +1,14 @@
 /**
- * Chat input bar — auto-resizing textarea, file attach, voice input button,
- * system-prompt indicator pill, offline queue badge, send on Enter.
+ * ChatInput — Claude-inspired input bar with integrated model selector.
+ *
+ * Layout: Model selector pill (left) | Textarea (center) | Action buttons (right)
+ * Bottom row: attachment chips, system prompt indicator, hint text.
  */
-import React, { useRef, useState, useEffect, forwardRef } from 'react'
-import { Send, Paperclip, X, Loader2, Moon, Mic, Brain, Monitor, Crosshair } from 'lucide-react'
+import React, { useRef, useState, useEffect, forwardRef, useCallback } from 'react'
+import { Paperclip, X, Loader2, Moon, Mic, Brain, Monitor, ArrowUp, Zap } from 'lucide-react'
+import { ModelSelector } from './ModelSelector'
+import { SlashCommandPicker } from './SlashCommandPicker'
+import type { SlashSkill } from './SlashCommandPicker'
 import type { ChatMessage } from '../hooks/useOpenClaw'
 
 interface Props {
@@ -17,21 +22,52 @@ interface Props {
   onInsertText?: (cb: (setter: React.Dispatch<React.SetStateAction<string>>) => void) => void
   onScreenCapture?: () => void
   isDesktopControlActive?: boolean
+  // Model selector props
+  model?: string
+  onModelChange?: (id: string) => void
+  connectedProviders?: string[]
+  ollamaModels?: Array<{ id: string; name: string; size: number; modifiedAt: string; parameterSize?: string; quantization?: string }>
+  gatewayCatalog?: Array<{ id: string; name: string; provider: string; contextWindow?: number; reasoning?: boolean }>
+  // Fast mode
+  fastMode?: boolean
+  onFastModeChange?: (v: boolean) => void
+  // Slash command callbacks
+  onSlashCommand?: (command: string) => void
 }
 
 export const ChatInput = forwardRef<HTMLTextAreaElement, Props>(({
   onSend, disabled = false, placeholder, incognito = false,
   systemPrompt, queuedCount = 0, onStartVoice, onInsertText,
   onScreenCapture, isDesktopControlActive = false,
+  model = 'auto', onModelChange, connectedProviders, ollamaModels, gatewayCatalog,
+  fastMode = false, onFastModeChange,
+  onSlashCommand,
 }, forwardedRef) => {
   const [text, setText]               = useState('')
   const [attachments, setAttachments] = useState<ChatMessage['attachments']>([])
   const [sending, setSending]         = useState(false)
+  const [focused, setFocused]         = useState(false)
   const internalRef                   = useRef<HTMLTextAreaElement>(null)
   const textareaRef                   = (forwardedRef as React.RefObject<HTMLTextAreaElement>) ?? internalRef
 
+  // ── Slash command detection ────────────────────────────────────────────
+  const slashActive = text.startsWith('/')
+  const slashQuery = slashActive ? text.slice(1).split(/\s/)[0] : ''
+
+  const handleSlashSelect = useCallback((skill: SlashSkill) => {
+    if (skill.id.startsWith('_')) {
+      // Built-in command — execute directly
+      onSlashCommand?.(skill.name)
+      setText('')
+    } else {
+      // Skill — replace the slash command with a prefixed message
+      setText(`/${skill.name} `)
+      textareaRef.current?.focus()
+    }
+  }, [onSlashCommand, textareaRef])
+
   const effectivePlaceholder = placeholder ?? (
-    disabled    ? 'Connecting to OpenClaw…' :
+    disabled    ? 'Connecting…' :
     incognito   ? 'Incognito — not stored…' :
     'Message Nyra…'
   )
@@ -44,7 +80,7 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, Props>(({
     ta.style.height = Math.min(ta.scrollHeight, 200) + 'px'
   }, [text])
 
-  // Allow parent to insert text (e.g. from voice / prompt library)
+  // Allow parent to insert text
   useEffect(() => {
     onInsertText?.((setter) => setter(prev => prev + (prev ? ' ' : '')))
   }, [onInsertText])
@@ -62,6 +98,8 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, Props>(({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // When slash picker is open, let it handle Enter/ArrowUp/ArrowDown/Escape
+    if (slashActive && ['Enter', 'ArrowDown', 'ArrowUp', 'Escape'].includes(e.key)) return
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
   }
 
@@ -80,12 +118,12 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, Props>(({
   const canSend = text.trim().length > 0 && !disabled && !sending
 
   return (
-    <div className="flex-shrink-0">
+    <div className="max-w-[720px] mx-auto w-full">
       {/* System prompt indicator */}
       {systemPrompt && (
         <div className="flex items-center gap-1.5 mb-2 px-1">
-          <Brain size={10} className="text-gold-400/70" />
-          <span className="text-[10px] text-gold-400/60 truncate max-w-[300px]">
+          <Brain size={11} className="text-gold-400/60" />
+          <span className="text-[11px] text-gold-400/50 truncate max-w-[400px]">
             System: {systemPrompt.slice(0, 60)}{systemPrompt.length > 60 ? '…' : ''}
           </span>
         </div>
@@ -94,8 +132,8 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, Props>(({
       {/* Offline queue badge */}
       {queuedCount > 0 && (
         <div className="flex items-center gap-1.5 mb-2 px-1">
-          <span className="text-[10px] text-gold-400/70">
-            ⚡ {queuedCount} message{queuedCount > 1 ? 's' : ''} queued — will send on reconnect
+          <span className="text-[11px] text-gold-400/60">
+            {queuedCount} message{queuedCount > 1 ? 's' : ''} queued — will send on reconnect
           </span>
         </div>
       )}
@@ -104,9 +142,10 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, Props>(({
       {attachments && attachments.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-2">
           {attachments.map((a, i) => (
-            <div key={i} className="flex items-center gap-1.5 bg-white/10 border border-white/10 rounded-lg px-2.5 py-1 text-xs text-white/70">
-              <span className="truncate max-w-[140px]">📎 {a.name}</span>
-              <button onClick={() => removeAttachment(i)} className="text-white/40 hover:text-white/80 flex-shrink-0">
+            <div key={i} className="flex items-center gap-1.5 bg-white/[0.05] border border-white/[0.07] rounded-lg px-2.5 py-1 text-[11px] text-white/60">
+              <span className="text-white/30">📎</span>
+              <span className="truncate max-w-[160px]">{a.name}</span>
+              <button onClick={() => removeAttachment(i)} className="text-white/30 hover:text-white/70 flex-shrink-0 ml-0.5">
                 <X size={11} />
               </button>
             </div>
@@ -114,65 +153,122 @@ export const ChatInput = forwardRef<HTMLTextAreaElement, Props>(({
         </div>
       )}
 
-      {/* Input row */}
-      <div className="flex items-end gap-2 bg-white/[0.05] border border-white/10 rounded-2xl px-3 py-2.5 focus-within:border-white/20 transition-colors">
-        <button onClick={handleFileAttach} disabled={disabled} className="flex-shrink-0 p-1 text-white/30 hover:text-white/70 transition-colors disabled:opacity-30">
-          <Paperclip size={16} />
-        </button>
-
-        {onScreenCapture && (
-          <button 
-            onClick={onScreenCapture} 
-            disabled={disabled} 
-            title="Capture screen"
-            className="flex-shrink-0 p-1 text-white/30 hover:text-terra-300 transition-colors disabled:opacity-30"
-          >
-            <Monitor size={16} />
-          </button>
-        )}
-
-        {isDesktopControlActive && (
-          <div className="flex-shrink-0 flex items-center gap-1 px-1.5 py-0.5 bg-gold-500/10 border border-gold-500/20 rounded-lg" title="Desktop control active">
-            <Crosshair size={11} className="text-gold-400" />
-            <span className="text-[9px] text-gold-400/80 font-medium">PC</span>
-          </div>
-        )}
-
-        <textarea
-          ref={textareaRef}
-          value={text}
-          onChange={e => setText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={effectivePlaceholder}
-          disabled={disabled}
-          rows={1}
-          className="flex-1 bg-transparent text-sm text-white/90 placeholder-white/25 outline-none resize-none leading-relaxed max-h-[200px] disabled:opacity-40"
+      {/* ── Main input container ─────────────────────────────────────────── */}
+      <div className={`relative rounded-2xl border transition-all duration-200 ${
+        focused
+          ? 'border-white/[0.15] bg-white/[0.04] shadow-lg shadow-black/20'
+          : 'border-white/[0.08] bg-white/[0.025] hover:border-white/[0.1]'
+      }`}>
+        {/* Slash command picker — opens above the input */}
+        <SlashCommandPicker
+          query={slashQuery}
+          onSelect={handleSlashSelect}
+          onClose={() => setText('')}
+          visible={slashActive && focused}
         />
+        {/* Textarea */}
+        <div className="px-4 pt-3 pb-2">
+          <textarea
+            ref={textareaRef}
+            value={text}
+            onChange={e => setText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            placeholder={effectivePlaceholder}
+            disabled={disabled}
+            rows={1}
+            className="w-full bg-transparent text-[15px] text-white/90 placeholder-white/25 outline-none resize-none leading-[1.6] max-h-[200px] disabled:opacity-40"
+          />
+        </div>
 
-        {onStartVoice && (
-          <button onClick={onStartVoice} disabled={disabled} className="flex-shrink-0 p-1 text-white/30 hover:text-blush-400 transition-colors disabled:opacity-30">
-            <Mic size={16} />
-          </button>
-        )}
+        {/* Bottom toolbar row */}
+        <div className="flex items-center gap-1 px-2.5 pb-2.5">
+          {/* Model selector (left) */}
+          {onModelChange && (
+            <ModelSelector
+              value={model}
+              onChange={onModelChange}
+              connectedProviders={connectedProviders}
+              ollamaModels={ollamaModels}
+              gatewayCatalog={gatewayCatalog}
+              compact
+            />
+          )}
 
-        <button
-          onClick={handleSend}
-          disabled={!canSend}
-          className={`flex-shrink-0 p-1.5 rounded-xl transition-all ${
-            canSend ? 'bg-terra-400 hover:bg-terra-500 text-white shadow-lg shadow-terra-400/20' : 'bg-white/5 text-white/20 cursor-not-allowed'
-          }`}
-        >
-          {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-        </button>
+          {/* Fast Mode toggle */}
+          {onFastModeChange && (
+            <button
+              onClick={() => onFastModeChange(!fastMode)}
+              title={fastMode ? 'Fast Mode ON — using fastest model' : 'Fast Mode OFF'}
+              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-all ${
+                fastMode
+                  ? 'bg-sage-500/15 text-sage-300 border border-sage-500/25'
+                  : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'
+              }`}
+            >
+              <Zap size={11} className={fastMode ? 'text-sage-400' : ''} />
+              {fastMode && <span>Fast</span>}
+            </button>
+          )}
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Action buttons (right) */}
+          <div className="flex items-center gap-0.5">
+            <button onClick={handleFileAttach} disabled={disabled}
+              title="Attach file"
+              className="p-1.5 rounded-lg text-white/25 hover:text-white/60 hover:bg-white/[0.05] transition-colors disabled:opacity-30">
+              <Paperclip size={15} />
+            </button>
+
+            {onScreenCapture && (
+              <button onClick={onScreenCapture} disabled={disabled}
+                title="Capture screen"
+                className="p-1.5 rounded-lg text-white/25 hover:text-white/60 hover:bg-white/[0.05] transition-colors disabled:opacity-30">
+                <Monitor size={15} />
+              </button>
+            )}
+
+            {onStartVoice && (
+              <button onClick={onStartVoice} disabled={disabled}
+                title="Voice input"
+                className="p-1.5 rounded-lg text-white/25 hover:text-white/60 hover:bg-white/[0.05] transition-colors disabled:opacity-30">
+                <Mic size={15} />
+              </button>
+            )}
+
+            {isDesktopControlActive && (
+              <div className="flex items-center gap-1 px-1.5 py-0.5 bg-gold-500/10 border border-gold-500/20 rounded-lg ml-1" title="Desktop control active">
+                <span className="text-[9px] text-gold-400/80 font-medium">PC</span>
+              </div>
+            )}
+
+            {/* Send button */}
+            <button
+              onClick={handleSend}
+              disabled={!canSend}
+              className={`ml-1 p-1.5 rounded-xl transition-all ${
+                canSend
+                  ? 'bg-terra-400 hover:bg-terra-500 text-white shadow-md shadow-terra-400/20'
+                  : 'bg-white/[0.04] text-white/15 cursor-not-allowed'
+              }`}
+            >
+              {sending ? <Loader2 size={15} className="animate-spin" /> : <ArrowUp size={15} />}
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div className="flex items-center justify-center gap-3 mt-1.5">
+      {/* Hint text */}
+      <div className="flex items-center justify-center gap-3 mt-2">
         {incognito && (
-          <span className="flex items-center gap-1 text-[10px] text-gold-400/70">
-            <Moon size={9} /> Incognito · not saved
+          <span className="flex items-center gap-1 text-[10px] text-gold-400/60">
+            <Moon size={9} /> Incognito
           </span>
         )}
-        <p className="text-center text-[10px] text-white/15">Enter ↵ send · Shift+Enter newline</p>
+        <p className="text-[10px] text-white/[0.12]">Enter to send · Shift+Enter for new line · / for commands</p>
       </div>
     </div>
   )

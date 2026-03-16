@@ -25,7 +25,8 @@ const EXEC_TIMEOUT = 5000;
 
 // ── Input sanitisation ─────────────────────────────────────────────────────
 // Only allow safe characters in app names / key names to prevent shell injection.
-const SAFE_APP_NAME = /^[a-zA-Z0-9 _\-./()]+$/;
+// Note: forward-slash and dot are excluded to prevent path traversal attacks.
+const SAFE_APP_NAME = /^[a-zA-Z0-9 _\-()]+$/;
 
 function assertSafeAppName(name: string): void {
   if (!name || name.length > 256 || !SAFE_APP_NAME.test(name)) {
@@ -160,7 +161,12 @@ function mouseDoubleClick(x: number, y: number, opts?: Options): string {
       const script = `tell application "System Events" to double click at (${x}, ${y})`;
       exec(`osascript -e ${escapeShellArg(script)}`);
     } else if (plat === 'windows') {
-      const ps = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{LBUTTON}{LBUTTON}')`;
+      // Use mouse_event P/Invoke for reliable double-click (SendKeys has no LBUTTON token)
+      const ps = `
+Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern void mouse_event(int f,int x,int y,int d,int e);' -Name U -Namespace W;
+[W.U]::mouse_event(0x0002,0,0,0,0);[W.U]::mouse_event(0x0004,0,0,0,0);
+Start-Sleep -Milliseconds 50;
+[W.U]::mouse_event(0x0002,0,0,0,0);[W.U]::mouse_event(0x0004,0,0,0,0)`;
       exec(`powershell -NoProfile -Command "${ps}"`);
     } else {
       exec(`xdotool click 1 click 1`);
@@ -196,8 +202,11 @@ function mouseScroll(
       const script = `tell application "System Events" to scroll down by ${delta}`;
       exec(`osascript -e ${escapeShellArg(script)}`);
     } else if (plat === 'windows') {
-      const delta = direction === 'up' ? amount : -amount;
-      const ps = `[System.Windows.Forms.SendKeys]::SendWait('{SCROLL_UP}' * ${Math.abs(delta)})`;
+      // Use mouse_event with MOUSEEVENTF_WHEEL (0x0800); positive delta = scroll up
+      const wheelDelta = direction === 'up' ? 120 * amount : -120 * amount;
+      const ps = `
+Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern void mouse_event(int f,int x,int y,int d,int e);' -Name U -Namespace W;
+[W.U]::mouse_event(0x0800,0,0,${wheelDelta},0)`;
       exec(`powershell -NoProfile -Command "${ps}"`);
     } else {
       const btn = direction === 'up' ? 4 : 5;
@@ -239,13 +248,16 @@ function mouseDrag(
       end tell`;
       exec(`osascript -e ${escapeShellArg(script)}`);
     } else if (plat === 'windows') {
+      // Use mouse_event P/Invoke for reliable drag (SendKeys has no LBUTTON_DOWN/UP tokens)
       const ps = `
-        Add-Type -AssemblyName System.Windows.Forms;
-        [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${fromX}, ${fromY});
-        [System.Windows.Forms.SendKeys]::SendWait('{LBUTTON_DOWN}');
-        [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${toX}, ${toY});
-        [System.Windows.Forms.SendKeys]::SendWait('{LBUTTON_UP}');
-      `;
+Add-Type -AssemblyName System.Windows.Forms;
+Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern void mouse_event(int f,int x,int y,int d,int e);' -Name U -Namespace W;
+[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${fromX}, ${fromY});
+[W.U]::mouse_event(0x0002,0,0,0,0);
+Start-Sleep -Milliseconds 50;
+[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${toX}, ${toY});
+Start-Sleep -Milliseconds 50;
+[W.U]::mouse_event(0x0004,0,0,0,0)`;
       exec(`powershell -NoProfile -Command "${ps}"`);
     } else {
       exec(`xdotool mousemove ${fromX} ${fromY} mousedown 1 mousemove ${toX} ${toY} mouseup 1`);

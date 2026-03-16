@@ -188,9 +188,9 @@ export function loadPlugin(pluginId: string): boolean {
       },
     }
 
-    const script = new vm.Script(code, { filename: mainPath, timeout: 30000 })
+    const script = new vm.Script(code, { filename: mainPath })
     const context = vm.createContext(sandbox)
-    script.runInContext(context, { timeout: 30000 })
+    script.runInContext(context)
 
     const pluginModule = (sandbox as any).module.exports
 
@@ -230,7 +230,7 @@ export async function installPlugin(source: string): Promise<boolean> {
   ensurePluginDirs()
 
   try {
-    let zipBuffer: Buffer
+    let _zipBuffer: Buffer
 
     // Detect if source is URL or local path
     if (source.startsWith('http://') || source.startsWith('https://')) {
@@ -240,14 +240,14 @@ export async function installPlugin(source: string): Promise<boolean> {
         console.error(`Failed to download plugin: ${response.statusText}`)
         return false
       }
-      zipBuffer = await response.buffer() as any as Buffer
+      _zipBuffer = await response.arrayBuffer() as any as Buffer
     } else {
       // Load from local path
       if (!fs.existsSync(source)) {
         console.error(`Plugin source not found: ${source}`)
         return false
       }
-      zipBuffer = await fs.promises.readFile(source) as any as Buffer
+      _zipBuffer = await fs.promises.readFile(source) as any as Buffer
     }
 
     // Check if it's a directory (unpacked plugin) or a zip

@@ -137,9 +137,9 @@ const RISK_CONFIG = {
   },
   high: {
     icon: AlertTriangle,
-    color: 'text-red-400',
-    bg: 'bg-red-500/10',
-    border: 'border-red-500/30',
+    color: 'text-blush-300',
+    bg: 'bg-blush-400/10',
+    border: 'border-blush-400/30',
     label: 'High Risk',
   },
 }
@@ -391,7 +391,7 @@ export function ActionConfirmation({
               {/* Deny button */}
               <button
                 onClick={handleDeny}
-                className="flex items-center justify-center gap-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 hover:border-red-500/50 rounded-md text-red-400 hover:text-red-300 font-medium text-sm transition-colors duration-150"
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-blush-400/10 hover:bg-blush-400/20 border border-blush-400/30 hover:border-blush-400/50 rounded-md text-blush-300 hover:text-blush-300 font-medium text-sm transition-colors duration-150"
               >
                 <X className="w-4 h-4" />
                 <span>Deny</span>

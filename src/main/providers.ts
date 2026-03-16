@@ -60,15 +60,22 @@ export const PROVIDER_CATALOG: ProviderDef[] = [
     id: 'openai',
     label: 'ChatGPT / OpenAI',
     icon: '🤖',
-    oauthUrl: 'https://chat.openai.com',
+    oauthUrl: 'https://platform.openai.com/api-keys',
     apiKeyPrefix: 'sk-',
     models: [
-      { id: 'openai-codex/gpt-4o',        label: 'GPT-4o',        contextWindow: 128_000 },
-      { id: 'openai-codex/gpt-4o-mini',   label: 'GPT-4o Mini',   contextWindow: 128_000 },
-      { id: 'openai-codex/o3-mini',       label: 'o3 Mini',        contextWindow: 200_000 },
-      { id: 'openai-codex/o3',            label: 'o3',             contextWindow: 200_000 },
-      { id: 'openai-codex/o4-mini',       label: 'o4 Mini',        contextWindow: 200_000 },
-      { id: 'openai-codex/gpt-4.1',       label: 'GPT-4.1',       contextWindow: 1_000_000 },
+      // ── Latest (March 2026) ──
+      { id: 'openai-codex/gpt-5.4',           label: 'GPT-5.4',            contextWindow: 1_050_000 },
+      { id: 'openai-codex/gpt-5.4-pro',       label: 'GPT-5.4 Pro',       contextWindow: 1_050_000 },
+      { id: 'openai-codex/gpt-5.3-codex',     label: 'GPT-5.3 Codex',     contextWindow: 1_000_000 },
+      { id: 'openai-codex/gpt-5-mini',        label: 'GPT-5 Mini',        contextWindow: 1_000_000 },
+      // ── Reasoning ──
+      { id: 'openai-codex/o4-mini',           label: 'o4 Mini',            contextWindow: 200_000 },
+      { id: 'openai-codex/o3',                label: 'o3',                 contextWindow: 200_000 },
+      { id: 'openai-codex/o3-mini',           label: 'o3 Mini',            contextWindow: 200_000 },
+      // ── Previous generation (still available) ──
+      { id: 'openai-codex/gpt-4.1',           label: 'GPT-4.1',           contextWindow: 1_000_000 },
+      { id: 'openai-codex/gpt-4o',            label: 'GPT-4o',            contextWindow: 128_000 },
+      { id: 'openai-codex/gpt-4o-mini',       label: 'GPT-4o Mini',       contextWindow: 128_000 },
     ],
   },
   {
@@ -78,8 +85,8 @@ export const PROVIDER_CATALOG: ProviderDef[] = [
     oauthUrl: 'https://console.anthropic.com/settings/keys',
     apiKeyPrefix: 'sk-ant-',
     models: [
-      { id: 'anthropic/claude-sonnet-4-6',  label: 'Claude Sonnet 4.6',   contextWindow: 200_000 },
       { id: 'anthropic/claude-opus-4-6',    label: 'Claude Opus 4.6',     contextWindow: 200_000 },
+      { id: 'anthropic/claude-sonnet-4-6',  label: 'Claude Sonnet 4.6',   contextWindow: 200_000 },
       { id: 'anthropic/claude-haiku-4-5',   label: 'Claude Haiku 4.5',    contextWindow: 200_000 },
     ],
   },
@@ -89,9 +96,13 @@ export const PROVIDER_CATALOG: ProviderDef[] = [
     icon: '💎',
     oauthUrl: 'https://aistudio.google.com/app/apikey',
     models: [
-      { id: 'google-gemini/gemini-2.5-pro',   label: 'Gemini 2.5 Pro',   contextWindow: 1_000_000 },
-      { id: 'google-gemini/gemini-2.5-flash', label: 'Gemini 2.5 Flash', contextWindow: 1_000_000 },
-      { id: 'google-gemini/gemini-2.0-flash', label: 'Gemini 2.0 Flash', contextWindow: 1_000_000 },
+      // ── Latest (March 2026) ──
+      { id: 'google-gemini/gemini-3.1-pro-preview',        label: 'Gemini 3.1 Pro',        contextWindow: 1_048_576 },
+      { id: 'google-gemini/gemini-3-flash-preview',        label: 'Gemini 3 Flash',        contextWindow: 1_048_576 },
+      { id: 'google-gemini/gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash Lite', contextWindow: 1_048_576 },
+      // ── Previous generation (retiring June 2026) ──
+      { id: 'google-gemini/gemini-2.5-pro',                label: 'Gemini 2.5 Pro',        contextWindow: 1_000_000 },
+      { id: 'google-gemini/gemini-2.5-flash',              label: 'Gemini 2.5 Flash',      contextWindow: 1_000_000 },
     ],
   },
   {
@@ -100,8 +111,61 @@ export const PROVIDER_CATALOG: ProviderDef[] = [
     icon: '🐙',
     oauthUrl: 'https://github.com/settings/copilot',
     models: [
-      { id: 'github-copilot/gpt-4o',       label: 'Copilot GPT-4o' },
-      { id: 'github-copilot/claude-sonnet', label: 'Copilot Claude Sonnet' },
+      // ── Latest (March 2026) ──
+      { id: 'github-copilot/gpt-5.4',              label: 'GPT-5.4',              contextWindow: 1_050_000 },
+      { id: 'github-copilot/claude-sonnet-4.6',    label: 'Claude Sonnet 4.6',    contextWindow: 200_000 },
+      { id: 'github-copilot/claude-opus-4.6',      label: 'Claude Opus 4.6',      contextWindow: 200_000 },
+      { id: 'github-copilot/gpt-5.3-codex',        label: 'GPT-5.3 Codex',        contextWindow: 1_000_000 },
+      { id: 'github-copilot/gemini-3.1-pro',       label: 'Gemini 3.1 Pro',       contextWindow: 1_048_576 },
+      // ── Other available models ──
+      { id: 'github-copilot/claude-opus-4.5',      label: 'Claude Opus 4.5',      contextWindow: 200_000 },
+      { id: 'github-copilot/claude-sonnet-4.5',    label: 'Claude Sonnet 4.5',    contextWindow: 200_000 },
+      { id: 'github-copilot/claude-haiku-4.5',     label: 'Claude Haiku 4.5',     contextWindow: 200_000 },
+      { id: 'github-copilot/gpt-5-mini',           label: 'GPT-5 Mini',           contextWindow: 1_000_000 },
+      { id: 'github-copilot/gpt-5.2-codex',        label: 'GPT-5.2 Codex',        contextWindow: 1_000_000 },
+      { id: 'github-copilot/gemini-2.5-pro',       label: 'Gemini 2.5 Pro',       contextWindow: 1_000_000 },
+      { id: 'github-copilot/o4-mini',              label: 'o4 Mini',              contextWindow: 200_000 },
+    ],
+  },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    icon: '🔀',
+    oauthUrl: 'https://openrouter.ai/keys',
+    apiKeyPrefix: 'sk-or-',
+    models: [
+      // ── Smart routing ──
+      { id: 'openrouter/auto',                              label: 'Auto (Best)',              contextWindow: 128_000 },
+      // ── Flagship paid models (latest, March 2026) ──
+      { id: 'openrouter/anthropic/claude-opus-4-6',         label: 'Claude Opus 4.6',          contextWindow: 200_000 },
+      { id: 'openrouter/anthropic/claude-sonnet-4-6',       label: 'Claude Sonnet 4.6',        contextWindow: 200_000 },
+      { id: 'openrouter/openai/gpt-5.4',                    label: 'GPT-5.4',                  contextWindow: 1_050_000 },
+      { id: 'openrouter/openai/gpt-5-mini',                 label: 'GPT-5 Mini',               contextWindow: 1_000_000 },
+      { id: 'openrouter/google/gemini-3.1-pro-preview',     label: 'Gemini 3.1 Pro',           contextWindow: 1_048_576 },
+      { id: 'openrouter/google/gemini-3-flash-preview',     label: 'Gemini 3 Flash',           contextWindow: 1_048_576 },
+      // ── Kimi (Moonshot AI) ──
+      { id: 'openrouter/moonshotai/kimi-k2.5',              label: 'Kimi K2.5',                contextWindow: 256_000 },
+      { id: 'openrouter/moonshotai/kimi-k2',                label: 'Kimi K2',                  contextWindow: 128_000 },
+      // ── MiniMax ──
+      { id: 'openrouter/minimax/minimax-m1',                label: 'MiniMax M1',               contextWindow: 1_000_000 },
+      { id: 'openrouter/minimax/minimax-m1-mini',           label: 'MiniMax M1 Mini',          contextWindow: 512_000 },
+      // ── Reasoning ──
+      { id: 'openrouter/deepseek/deepseek-r1',              label: 'DeepSeek R1',              contextWindow: 128_000 },
+      { id: 'openrouter/openai/o4-mini',                    label: 'o4 Mini',                  contextWindow: 200_000 },
+      // ── Open-weight / strong ──
+      { id: 'openrouter/deepseek/deepseek-v3-0324',         label: 'DeepSeek V3 (0324)',       contextWindow: 128_000 },
+      { id: 'openrouter/meta-llama/llama-4-maverick',       label: 'Llama 4 Maverick',         contextWindow: 1_048_576 },
+      { id: 'openrouter/meta-llama/llama-4-scout',          label: 'Llama 4 Scout',            contextWindow: 512_000 },
+      { id: 'openrouter/qwen/qwen-3-235b-a22b',            label: 'Qwen 3 235B',              contextWindow: 128_000 },
+      { id: 'openrouter/qwen/qwen-3-32b',                   label: 'Qwen 3 32B',               contextWindow: 128_000 },
+      { id: 'openrouter/mistralai/mistral-large-2',         label: 'Mistral Large 2',          contextWindow: 128_000 },
+      // ── Free models (community tier, $0) ──
+      { id: 'openrouter/deepseek/deepseek-r1:free',         label: 'DeepSeek R1 (Free)',       contextWindow: 128_000 },
+      { id: 'openrouter/deepseek/deepseek-v3-0324:free',    label: 'DeepSeek V3 (Free)',       contextWindow: 128_000 },
+      { id: 'openrouter/meta-llama/llama-4-maverick:free',   label: 'Llama 4 Maverick (Free)',  contextWindow: 256_000 },
+      { id: 'openrouter/qwen/qwen-3-32b:free',              label: 'Qwen 3 32B (Free)',        contextWindow: 128_000 },
+      { id: 'openrouter/google/gemma-3-27b-it:free',        label: 'Gemma 3 27B (Free)',       contextWindow: 96_000 },
+      { id: 'openrouter/mistralai/mistral-small-3.2:free',  label: 'Mistral Small 3.2 (Free)', contextWindow: 128_000 },
     ],
   },
 ]
@@ -125,7 +189,14 @@ interface ProvidersConfig {
 function readConfig(): ProvidersConfig {
   const p = getConfigPath()
   if (!fs.existsSync(p)) return { providers: {} }
-  try { return JSON.parse(fs.readFileSync(p, 'utf8')) } catch { return { providers: {} } }
+  try {
+    const raw = JSON.parse(fs.readFileSync(p, 'utf8'))
+    // Defensive: ensure `.providers` always exists even if the file is malformed
+    if (!raw || typeof raw !== 'object' || !raw.providers || typeof raw.providers !== 'object') {
+      return { providers: {}, ...raw }
+    }
+    return raw
+  } catch { return { providers: {} } }
 }
 
 function writeConfig(cfg: ProvidersConfig): void {
@@ -147,6 +218,7 @@ export function saveApiKey(providerId: string, key: string): boolean {
     fs.writeFileSync(keyPath, encrypted, { mode: 0o600 })
     // Enable provider in config
     const cfg = readConfig()
+    if (!cfg.providers) cfg.providers = {}
     if (!cfg.providers[providerId]) {
       const def = PROVIDER_CATALOG.find(p => p.id === providerId)
       cfg.providers[providerId] = {
@@ -159,7 +231,7 @@ export function saveApiKey(providerId: string, key: string): boolean {
     writeConfig(cfg)
 
     // ── Write-through to OpenClaw auth-profiles.json ──
-    const model = cfg.providers[providerId]?.activeModel
+    const model = cfg.providers?.[providerId]?.activeModel
     syncProviderKey(providerId, key, model)
 
     return true
@@ -189,7 +261,7 @@ export function removeApiKey(providerId: string): boolean {
     const keyPath = getKeyPath(providerId)
     if (fs.existsSync(keyPath)) fs.unlinkSync(keyPath)
     const cfg = readConfig()
-    if (cfg.providers[providerId]) {
+    if (cfg.providers?.[providerId]) {
       cfg.providers[providerId].enabled = false
     }
     writeConfig(cfg)
@@ -213,14 +285,15 @@ export function listProviders(): ProviderState[] {
   const cfg = readConfig()
   return PROVIDER_CATALOG.map(def => ({
     id: def.id,
-    enabled: cfg.providers[def.id]?.enabled ?? false,
+    enabled: cfg.providers?.[def.id]?.enabled ?? false,
     hasKey: hasApiKey(def.id),
-    activeModel: cfg.providers[def.id]?.activeModel ?? def.models[0]?.id,
+    activeModel: cfg.providers?.[def.id]?.activeModel ?? def.models[0]?.id,
   }))
 }
 
 export function setActiveModel(providerId: string, modelId: string): boolean {
   const cfg = readConfig()
+  if (!cfg.providers) cfg.providers = {}
   if (!cfg.providers[providerId]) {
     cfg.providers[providerId] = { enabled: false }
   }
@@ -241,7 +314,7 @@ export function syncProvidersToOpenClaw(): void {
   const cfg = readConfig()
   syncAllProviders(
     (id) => loadApiKey(id),
-    (id) => cfg.providers[id]?.activeModel
+    (id) => cfg.providers?.[id]?.activeModel
   )
   console.log('[Providers] Synced all provider keys to OpenClaw auth-profiles')
 }
@@ -252,7 +325,7 @@ export function resolveProvider(): { providerId: string; apiKey: string; model: 
   const cfg = readConfig()
   // Prefer order: openai, anthropic, gemini, copilot
   for (const def of PROVIDER_CATALOG) {
-    const state = cfg.providers[def.id]
+    const state = cfg.providers?.[def.id]
     if (state?.enabled) {
       const key = loadApiKey(def.id)
       if (key) {

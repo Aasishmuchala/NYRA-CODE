@@ -11,7 +11,11 @@
     "preview": "electron-vite preview",
     "package:mac": "npm run build && electron-builder --mac",
     "package:win": "npm run build && electron-builder --win",
-    "package:all": "npm run build && electron-builder --mac --win"
+    "package:all": "npm run build && electron-builder --mac --win",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "npx playwright test --config e2e/playwright.config.ts",
+    "test:e2e:headed": "npx playwright test --config e2e/playwright.config.ts --headed"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
@@ -19,7 +23,6 @@
     "better-sqlite3": "^12.8.0",
     "chokidar": "^5.0.0",
     "electron-updater": "^6.1.7",
-    "node-fetch": "^3.3.2",
     "node-pty": "^1.1.0",
     "simple-git": "^3.33.0",
     "which": "^4.0.0",
@@ -31,22 +34,25 @@
     "@electron-toolkit/tsconfig": "^2.0.0",
     "@electron-toolkit/utils": "^4.0.0",
     "@types/better-sqlite3": "^7.6.12",
-    "@types/node": "^20.11.16",
+    "@types/node": "^20.19.37",
     "@types/react": "^18.2.55",
     "@types/react-dom": "^18.2.19",
     "@types/which": "^3.0.3",
     "@types/ws": "^8.5.10",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.17",
-    "electron": "^29.0.0",
-    "electron-builder": "^24.9.1",
-    "electron-vite": "^2.1.0",
+    "electron": "^29.4.6",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "~2.3.0",
     "lucide-react": "^0.344.0",
     "postcss": "^8.4.35",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "sql.js": "^1.14.1",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3",
-    "vite": "^5.1.4"
+    "vite": "~5.4.21",
+    "vitest": "^4.1.0",
+    "@playwright/test": "^1.42.0"
   }
 }

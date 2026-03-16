@@ -48,6 +48,40 @@ html, body, #root {
   -webkit-backdrop-filter: blur(16px);
 }
 
+/* ── Wallpaper system ────────────────────────────────────────────────────── */
+/* Each wallpaper-* class uses a tileable PNG from assets/ */
+[class*="wallpaper-"] {
+  background-color: #131110;
+  background-repeat: repeat;
+  background-size: 800px 800px;
+}
+.wallpaper-none         { background-image: none !important; }
+.wallpaper-herringbone  { background-image: url('../assets/wallpaper-herringbone.png'); }
+.wallpaper-chevron      { background-image: url('../assets/wallpaper-chevron.png'); }
+.wallpaper-diamond      { background-image: url('../assets/wallpaper-diamond.png'); }
+.wallpaper-marble       { background-image: url('../assets/wallpaper-marble.png'); }
+.wallpaper-silk         { background-image: url('../assets/wallpaper-silk.png'); }
+.wallpaper-leather      { background-image: url('../assets/wallpaper-leather.png'); }
+.wallpaper-linen        { background-image: url('../assets/wallpaper-linen.png'); }
+.wallpaper-concrete     { background-image: url('../assets/wallpaper-concrete.png'); }
+.wallpaper-hexagon      { background-image: url('../assets/wallpaper-hexagon.png'); }
+.wallpaper-waves        { background-image: url('../assets/wallpaper-waves.png'); }
+.wallpaper-circuit      { background-image: url('../assets/wallpaper-circuit.png'); }
+.wallpaper-scales       { background-image: url('../assets/wallpaper-scales.png'); }
+
+/* Dim theme — slightly brighter */
+.theme-dim [class*="wallpaper-"] { filter: brightness(1.15); background-color: #1a1816; }
+/* Light theme — invert the dark wallpaper textures so they show as subtle warm patterns on cream */
+.theme-light [class*="wallpaper-"] {
+  background-color: #f5f0eb !important;
+  background-blend-mode: difference;
+  filter: invert(1) hue-rotate(180deg) brightness(1.05) contrast(0.7) sepia(0.15);
+}
+/* But do NOT inherit the filter to child elements */
+.theme-light [class*="wallpaper-"] > * {
+  filter: none;
+}
+
 /* Prose styles for message content — warm tones */
 .prose-sm strong {
   font-weight: 600;
@@ -80,3 +114,309 @@ html, body, #root {
 .border-white\/8 {
   border-color: rgba(232, 224, 214, 0.08);
 }
+
+/* ── Theme modes ──────────────────────────────────────────────────────────── */
+/* Dark (default) — no overrides needed, base styles above cover it */
+
+/* Dim — slightly lighter, softer contrast */
+.theme-dim,
+.theme-dim body,
+.theme-dim #root {
+  background: #1a1816 !important;
+  color: #d8d0c6 !important;
+}
+.theme-dim .bg-\[\#0b0a08\] { background-color: #1a1816 !important; }
+.theme-dim .bg-\[\#0d0b09\] { background-color: #1e1c19 !important; }
+.theme-dim .bg-\[\#141210\] { background-color: #222018 !important; }
+.theme-dim ::-webkit-scrollbar-thumb { background: rgba(216, 208, 198, 0.12); }
+.theme-dim ::-webkit-scrollbar-thumb:hover { background: rgba(216, 208, 198, 0.22); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Light — full warm light mode
+   Uses warm cream/tan tones (#f5f0eb base, #2a2520 text)
+   ═══════════════════════════════════════════════════════════════════════════ */
+.theme-light,
+.theme-light body,
+.theme-light #root {
+  background: #f5f0eb !important;
+  color: #2a2520 !important;
+}
+
+/* ── Background overrides ── */
+.theme-light .bg-\[\#0b0a08\] { background-color: #f5f0eb !important; }
+.theme-light .bg-\[\#0d0b09\] { background-color: #eee8e1 !important; }
+.theme-light .bg-\[\#141210\] { background-color: #e8e0d8 !important; }
+.theme-light .bg-\[\#131110\] { background-color: #ede6de !important; }
+.theme-light .bg-\[\#101010\] { background-color: #f0ebe5 !important; }
+
+/* Semi-transparent black → warm cream semi-transparent */
+.theme-light .bg-black\/10 { background-color: rgba(232, 224, 214, 0.35) !important; }
+.theme-light .bg-black\/20 { background-color: rgba(232, 224, 214, 0.45) !important; }
+.theme-light .bg-black\/30 { background-color: rgba(232, 224, 214, 0.6) !important; }
+.theme-light .bg-black\/40 { background-color: rgba(228, 218, 206, 0.65) !important; }
+.theme-light .bg-black\/50 { background-color: rgba(224, 214, 200, 0.7) !important; }
+.theme-light .bg-black\/60 { background-color: rgba(220, 210, 196, 0.75) !important; }
+.theme-light .bg-black\/70 { background-color: rgba(216, 206, 192, 0.8) !important; }
+
+/* More dark hex backgrounds → warm cream */
+.theme-light .bg-\[\#161411\] { background-color: #f0ebe4 !important; }
+.theme-light .bg-\[\#1a1716\] { background-color: #ede7e0 !important; }
+.theme-light .bg-\[\#121010\] { background-color: #f2ece5 !important; }
+.theme-light .bg-\[\#0e0c0a\] { background-color: #f3ede6 !important; }
+
+/* Divide lines */
+.theme-light .divide-white\/\[0\.03\] > :not([hidden]) ~ :not([hidden]) { border-color: rgba(42, 37, 32, 0.06) !important; }
+
+/* Terra accent overrides for light mode buttons and mode switcher */
+.theme-light .bg-terra-400\/80 { background-color: rgba(181, 98, 58, 0.85) !important; }
+.theme-light .bg-terra-400\/15 { background-color: rgba(181, 98, 58, 0.12) !important; }
+.theme-light .border-terra-400\/25 { border-color: rgba(181, 98, 58, 0.3) !important; }
+.theme-light .border-terra-400\/30 { border-color: rgba(181, 98, 58, 0.35) !important; }
+.theme-light .bg-terra-400\/10 { background-color: rgba(181, 98, 58, 0.1) !important; }
+
+/* ── Text overrides ── */
+.theme-light .text-white { color: #2a2520 !important; }
+.theme-light .text-white\/90 { color: rgba(42, 37, 32, 0.9) !important; }
+.theme-light .text-white\/80 { color: rgba(42, 37, 32, 0.8) !important; }
+.theme-light .text-white\/75 { color: rgba(42, 37, 32, 0.75) !important; }
+.theme-light .text-white\/70 { color: rgba(42, 37, 32, 0.7) !important; }
+.theme-light .text-white\/60 { color: rgba(42, 37, 32, 0.6) !important; }
+.theme-light .text-white\/50 { color: rgba(42, 37, 32, 0.5) !important; }
+.theme-light .text-white\/40 { color: rgba(42, 37, 32, 0.4) !important; }
+.theme-light .text-white\/35 { color: rgba(42, 37, 32, 0.35) !important; }
+.theme-light .text-white\/30 { color: rgba(42, 37, 32, 0.3) !important; }
+.theme-light .text-white\/25 { color: rgba(42, 37, 32, 0.25) !important; }
+.theme-light .text-white\/20 { color: rgba(42, 37, 32, 0.2) !important; }
+.theme-light .text-white\/15 { color: rgba(42, 37, 32, 0.15) !important; }
+.theme-light .text-white\/\[0\.12\] { color: rgba(42, 37, 32, 0.12) !important; }
+
+/* ── Border overrides ── */
+.theme-light .border-white\/\[0\.04\] { border-color: rgba(42, 37, 32, 0.08) !important; }
+.theme-light .border-white\/\[0\.05\] { border-color: rgba(42, 37, 32, 0.1) !important; }
+.theme-light .border-white\/\[0\.06\] { border-color: rgba(42, 37, 32, 0.12) !important; }
+.theme-light .border-white\/\[0\.07\] { border-color: rgba(42, 37, 32, 0.13) !important; }
+.theme-light .border-white\/\[0\.08\] { border-color: rgba(42, 37, 32, 0.15) !important; }
+.theme-light .border-white\/10 { border-color: rgba(42, 37, 32, 0.12) !important; }
+.theme-light .border-white\/15 { border-color: rgba(42, 37, 32, 0.15) !important; }
+.theme-light .border-white\/20 { border-color: rgba(42, 37, 32, 0.2) !important; }
+.theme-light .border-white\/50 { border-color: rgba(42, 37, 32, 0.3) !important; }
+
+/* ── Background opacity overrides ── */
+.theme-light .bg-white\/\[0\.02\] { background-color: rgba(42, 37, 32, 0.03) !important; }
+.theme-light .bg-white\/\[0\.03\] { background-color: rgba(42, 37, 32, 0.04) !important; }
+.theme-light .bg-white\/\[0\.04\] { background-color: rgba(42, 37, 32, 0.05) !important; }
+.theme-light .bg-white\/\[0\.05\] { background-color: rgba(42, 37, 32, 0.06) !important; }
+.theme-light .bg-white\/\[0\.06\] { background-color: rgba(42, 37, 32, 0.07) !important; }
+.theme-light .bg-white\/\[0\.08\] { background-color: rgba(42, 37, 32, 0.08) !important; }
+.theme-light .bg-white\/\[0\.09\] { background-color: rgba(42, 37, 32, 0.09) !important; }
+.theme-light .bg-white\/10 { background-color: rgba(42, 37, 32, 0.1) !important; }
+.theme-light .bg-white\/15 { background-color: rgba(42, 37, 32, 0.12) !important; }
+.theme-light .bg-white\/20 { background-color: rgba(42, 37, 32, 0.14) !important; }
+
+/* ── Hover states ── */
+.theme-light .hover\:bg-white\/\[0\.03\]:hover { background-color: rgba(42, 37, 32, 0.05) !important; }
+.theme-light .hover\:bg-white\/\[0\.04\]:hover { background-color: rgba(42, 37, 32, 0.06) !important; }
+.theme-light .hover\:bg-white\/\[0\.05\]:hover { background-color: rgba(42, 37, 32, 0.07) !important; }
+.theme-light .hover\:bg-white\/\[0\.06\]:hover { background-color: rgba(42, 37, 32, 0.08) !important; }
+.theme-light .hover\:bg-white\/\[0\.07\]:hover { background-color: rgba(42, 37, 32, 0.09) !important; }
+.theme-light .hover\:bg-white\/\[0\.08\]:hover { background-color: rgba(42, 37, 32, 0.10) !important; }
+.theme-light .hover\:bg-white\/10:hover { background-color: rgba(42, 37, 32, 0.12) !important; }
+.theme-light .hover\:bg-white\/5:hover { background-color: rgba(42, 37, 32, 0.06) !important; }
+.theme-light .hover\:text-white:hover { color: #2a2520 !important; }
+.theme-light .hover\:text-white\/50:hover { color: rgba(42, 37, 32, 0.5) !important; }
+.theme-light .hover\:text-white\/60:hover { color: rgba(42, 37, 32, 0.6) !important; }
+.theme-light .hover\:text-white\/70:hover { color: rgba(42, 37, 32, 0.7) !important; }
+.theme-light .hover\:text-white\/75:hover { color: rgba(42, 37, 32, 0.75) !important; }
+.theme-light .hover\:text-white\/80:hover { color: rgba(42, 37, 32, 0.8) !important; }
+.theme-light .hover\:text-white\/90:hover { color: rgba(42, 37, 32, 0.9) !important; }
+.theme-light .hover\:border-white\/\[0\.08\]:hover { border-color: rgba(42, 37, 32, 0.15) !important; }
+.theme-light .hover\:border-white\/15:hover { border-color: rgba(42, 37, 32, 0.2) !important; }
+.theme-light .hover\:border-white\/20:hover { border-color: rgba(42, 37, 32, 0.22) !important; }
+
+/* ── bg-white/5, bg-white/[0.07] (used in various interactive elements) ── */
+.theme-light .bg-white\/5 { background-color: rgba(42, 37, 32, 0.05) !important; }
+.theme-light .bg-white\/\[0\.07\] { background-color: rgba(42, 37, 32, 0.07) !important; }
+.theme-light .hover\:bg-white\/\[0\.07\]:hover { background-color: rgba(42, 37, 32, 0.09) !important; }
+
+/* ── Accent color adjustments for readability ── */
+/* Terra (terracotta) — darken slightly for contrast on cream */
+.theme-light .bg-terra-400 { background-color: #b5623a !important; }
+.theme-light .hover\:bg-terra-500:hover { background-color: #a45630 !important; }
+.theme-light .bg-terra-600\/80 { background-color: rgba(150, 68, 34, 0.85) !important; }
+.theme-light .hover\:bg-terra-500:hover { background-color: #a85a35 !important; }
+.theme-light .text-terra-300 { color: #8b4a28 !important; }
+.theme-light .text-terra-300\/60 { color: rgba(139, 74, 40, 0.7) !important; }
+.theme-light .hover\:text-terra-300:hover { color: #7a4020 !important; }
+.theme-light .border-terra-400 { border-color: #b5623a !important; }
+.theme-light .border-terra-400\/50 { border-color: rgba(181, 98, 58, 0.5) !important; }
+.theme-light .bg-terra-400\/10 { background-color: rgba(181, 98, 58, 0.12) !important; }
+.theme-light .ring-terra-400\/30 { --tw-ring-color: rgba(181, 98, 58, 0.3) !important; }
+
+/* Sage (green) */
+.theme-light .bg-sage-400 { background-color: #5a8a5e !important; }
+.theme-light .bg-sage-600\/80 { background-color: rgba(68, 110, 72, 0.85) !important; }
+.theme-light .hover\:bg-sage-500:hover { background-color: #4e7a52 !important; }
+.theme-light .text-sage-400 { color: #3d7042 !important; }
+.theme-light .text-sage-400\/60 { color: rgba(61, 112, 66, 0.6) !important; }
+.theme-light .border-sage-500\/25 { border-color: rgba(61, 112, 66, 0.3) !important; }
+.theme-light .bg-sage-500\/\[0\.03\] { background-color: rgba(61, 112, 66, 0.06) !important; }
+
+/* Gold */
+.theme-light .text-gold-400 { color: #a07820 !important; }
+.theme-light .fill-gold-400 { fill: #a07820 !important; }
+.theme-light .text-gold-400\/30 { color: rgba(160, 120, 32, 0.3) !important; }
+.theme-light .bg-gold-600\/80 { background-color: rgba(140, 100, 20, 0.85) !important; }
+.theme-light .hover\:bg-gold-500:hover { background-color: #9a7218 !important; }
+
+/* Blush (pink/red) */
+.theme-light .text-blush-400 { color: #c45060 !important; }
+.theme-light .text-blush-400\/60 { color: rgba(196, 80, 96, 0.7) !important; }
+.theme-light .hover\:text-blush-400:hover { color: #b04050 !important; }
+.theme-light .hover\:bg-blush-500\/10:hover { background-color: rgba(196, 80, 96, 0.12) !important; }
+
+/* ── Semantic color fixes ── */
+.theme-light .bg-emerald-400 { background-color: #059669 !important; }
+.theme-light .bg-emerald-500\/20 { background-color: rgba(5, 150, 105, 0.15) !important; }
+.theme-light .text-emerald-400 { color: #059669 !important; }
+.theme-light .border-emerald-500\/30 { border-color: rgba(5, 150, 105, 0.3) !important; }
+.theme-light .bg-amber-400 { background-color: #d97706 !important; }
+.theme-light .bg-amber-500\/20 { background-color: rgba(217, 119, 6, 0.15) !important; }
+.theme-light .text-amber-400 { color: #b45309 !important; }
+.theme-light .border-amber-500\/30 { border-color: rgba(217, 119, 6, 0.3) !important; }
+.theme-light .bg-red-400 { background-color: #dc2626 !important; }
+.theme-light .bg-blue-500\/20 { background-color: rgba(59, 130, 246, 0.12) !important; }
+.theme-light .text-blue-400 { color: #2563eb !important; }
+.theme-light .border-blue-500\/30 { border-color: rgba(59, 130, 246, 0.3) !important; }
+.theme-light .bg-yellow-500\/20 { background-color: rgba(234, 179, 8, 0.12) !important; }
+.theme-light .text-yellow-400 { color: #a16207 !important; }
+.theme-light .border-yellow-500\/30 { border-color: rgba(234, 179, 8, 0.3) !important; }
+.theme-light .bg-gray-500\/20 { background-color: rgba(107, 114, 128, 0.1) !important; }
+.theme-light .text-gray-400 { color: #4b5563 !important; }
+.theme-light .border-gray-500\/30 { border-color: rgba(107, 114, 128, 0.2) !important; }
+.theme-light .text-purple-400 { color: #7c3aed !important; }
+.theme-light .text-red-400 { color: #c53030 !important; }
+.theme-light .text-red-400\/70 { color: rgba(197, 48, 48, 0.8) !important; }
+.theme-light .text-red-500 { color: #b91c1c !important; }
+.theme-light .bg-red-500 { background-color: #dc2626 !important; }
+.theme-light .bg-red-500\/10 { background-color: rgba(220, 38, 38, 0.1) !important; }
+.theme-light .border-red-500\/20 { border-color: rgba(220, 38, 38, 0.2) !important; }
+.theme-light .text-green-400 { color: #16a34a !important; }
+.theme-light .bg-green-500\/10 { background-color: rgba(22, 163, 74, 0.1) !important; }
+.theme-light .border-green-500\/20 { border-color: rgba(22, 163, 74, 0.2) !important; }
+
+/* ── Input & interactive element fixes ── */
+.theme-light .placeholder-white\/20::placeholder { color: rgba(42, 37, 32, 0.35) !important; }
+.theme-light .placeholder-white\/25::placeholder { color: rgba(42, 37, 32, 0.35) !important; }
+.theme-light .placeholder-white\/40::placeholder { color: rgba(42, 37, 32, 0.45) !important; }
+.theme-light .focus\:border-terra-400\/50:focus { border-color: rgba(181, 98, 58, 0.55) !important; }
+.theme-light .ring-offset-\[\#101010\] { --tw-ring-offset-color: #f5f0eb !important; }
+.theme-light .ring-white\/50 { --tw-ring-color: rgba(42, 37, 32, 0.3) !important; }
+
+/* ── Gradient and backdrop fixes ── */
+.theme-light .backdrop-blur-md { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.theme-light .from-black\/70 { --tw-gradient-from: rgba(255, 250, 245, 0.7) !important; }
+.theme-light .to-transparent { --tw-gradient-to: transparent !important; }
+
+/* ── Animation fix: pulse should be visible */
+.theme-light .animate-pulse { animation: pulse-light 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+@keyframes pulse-light {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* ── Scrollbar ── */
+.theme-light ::-webkit-scrollbar-thumb { background: rgba(42, 37, 32, 0.15); }
+.theme-light ::-webkit-scrollbar-thumb:hover { background: rgba(42, 37, 32, 0.25); }
+
+/* ── Code & prose ── */
+.theme-light .prose-sm pre {
+  background: rgba(42, 37, 32, 0.06);
+  border-color: rgba(42, 37, 32, 0.12);
+}
+.theme-light .prose-sm strong { color: rgba(42, 37, 32, 0.95); }
+.theme-light .prose-sm em { color: rgba(42, 37, 32, 0.8); }
+.theme-light .prose-sm code { color: #5a3d20; }
+
+/* ── Shadow overrides ── */
+.theme-light .shadow-black\/20 { --tw-shadow-color: rgba(42, 37, 32, 0.08); }
+.theme-light .shadow-black\/60 { --tw-shadow-color: rgba(42, 37, 32, 0.12); }
+.theme-light .shadow-lg { --tw-shadow: 0 10px 15px -3px rgba(42, 37, 32, 0.06), 0 4px 6px -4px rgba(42, 37, 32, 0.04); }
+.theme-light .shadow-terra-500\/20 { --tw-shadow-color: rgba(181, 98, 58, 0.15); }
+
+/* ── Warm btn overrides for contrast ── */
+.theme-light .bg-warm-800\/80 { background-color: rgba(90, 75, 60, 0.85) !important; }
+.theme-light .hover\:bg-warm-700:hover { background-color: rgba(100, 85, 68, 0.9) !important; }
+.theme-light .bg-warm-800\/40 { background-color: rgba(90, 75, 60, 0.4) !important; }
+
+/* ── Disabled states ── */
+.theme-light .disabled\:bg-white\/\[0\.05\]:disabled { background-color: rgba(42, 37, 32, 0.06) !important; }
+.theme-light .disabled\:text-white\/20:disabled { color: rgba(42, 37, 32, 0.25) !important; }
+
+/* ── Font mono fix ── */
+.theme-light .font-mono { color: inherit; }
+
+/* ── Settings panel / sidebar overlays ── */
+.theme-light .bg-black\/80 { background-color: rgba(245, 240, 235, 0.85) !important; }
+.theme-light .bg-black\/90 { background-color: rgba(245, 240, 235, 0.92) !important; }
+
+/* ── Border override for sidebar borders ── */
+.theme-light .border-r { border-color: rgba(42, 37, 32, 0.08); }
+.theme-light .border-l { border-color: rgba(42, 37, 32, 0.08); }
+.theme-light .border-b { border-color: rgba(42, 37, 32, 0.08); }
+.theme-light .border-t { border-color: rgba(42, 37, 32, 0.08); }
+
+/* ── Focus ring overrides ── */
+.theme-light .focus\:ring-terra-400\/30:focus { --tw-ring-color: rgba(181, 98, 58, 0.35) !important; }
+.theme-light .focus\:border-white\/20:focus { border-color: rgba(42, 37, 32, 0.2) !important; }
+
+/* ── Gradient terra overrides ── */
+.theme-light .from-terra-400\/20 { --tw-gradient-from: rgba(181, 98, 58, 0.15) !important; }
+.theme-light .to-terra-600\/15 { --tw-gradient-to: rgba(150, 68, 34, 0.12) !important; }
+
+/* ── Opacity text variants for light readability ── */
+.theme-light .text-white\/\[0\.08\] { color: rgba(42, 37, 32, 0.12) !important; }
+.theme-light .text-white\/\[0\.04\] { color: rgba(42, 37, 32, 0.06) !important; }
+
+/* ── Terra-200 text used in Skills/Settings tab highlights ── */
+.theme-light .text-terra-200 { color: #8b4a28 !important; }
+.theme-light .text-terra-400 { color: #a0522d !important; }
+.theme-light .hover\:text-terra-200:hover { color: #7a4020 !important; }
+.theme-light .bg-terra-500\/30 { background-color: rgba(181, 98, 58, 0.15) !important; }
+.theme-light .bg-terra-500\/20 { background-color: rgba(181, 98, 58, 0.12) !important; }
+.theme-light .bg-terra-500\/25 { background-color: rgba(181, 98, 58, 0.14) !important; }
+.theme-light .hover\:bg-terra-500\/40:hover { background-color: rgba(181, 98, 58, 0.22) !important; }
+.theme-light .hover\:bg-terra-500\/35:hover { background-color: rgba(181, 98, 58, 0.2) !important; }
+.theme-light .border-terra-500\/50 { border-color: rgba(181, 98, 58, 0.4) !important; }
+.theme-light .border-terra-500\/40 { border-color: rgba(181, 98, 58, 0.35) !important; }
+
+/* ── Amber star ratings in light mode ── */
+.theme-light .fill-amber-500 { fill: #d97706 !important; }
+.theme-light .text-amber-500 { color: #d97706 !important; }
+.theme-light .text-amber-500\/25 { color: rgba(217, 119, 6, 0.3) !important; }
+
+/* ── Chat message content readable in light mode ── */
+.theme-light .prose-sm p { color: #2a2520; }
+.theme-light .prose-sm li { color: #2a2520; }
+.theme-light .prose-sm h1, .theme-light .prose-sm h2, .theme-light .prose-sm h3 { color: #1a1510; }
+
+/* ── Wallpaper thumbnail images in settings should show with border in light mode ── */
+.theme-light img[alt="Herringbone"],
+.theme-light img[alt="Chevron"],
+.theme-light img[alt="Diamond"],
+.theme-light img[alt="Marble"],
+.theme-light img[alt="Silk"],
+.theme-light img[alt="Leather"],
+.theme-light img[alt="Linen"],
+.theme-light img[alt="Concrete"],
+.theme-light img[alt="Hexagon"],
+.theme-light img[alt="Waves"],
+.theme-light img[alt="Circuit"],
+.theme-light img[alt="Scales"] {
+  filter: invert(1) hue-rotate(180deg) brightness(1.1) contrast(0.6) sepia(0.2);
+}
+
+/* ── "None" wallpaper box in light mode ── */
+.theme-light .text-white\/20 { color: rgba(42, 37, 32, 0.25) !important; }
+
+/* ── Selection ── */
+.theme-light ::selection { background: rgba(181, 98, 58, 0.2); color: #2a2520; }

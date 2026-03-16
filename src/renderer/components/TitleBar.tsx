@@ -13,12 +13,10 @@ export const TitleBar: React.FC<Props> = ({ title = 'Nyra' }) => {
 
   return (
     <div
-      className="h-10 flex items-center justify-between px-4 select-none flex-shrink-0"
+      className="h-11 flex items-center justify-between px-4 select-none flex-shrink-0"
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
-      {/* macOS: leave space for native traffic lights (16px left) */}
-      {isMac && <div className="w-16" />}
-
+      {/* Title centered in the content area (traffic lights are in the sidebar now) */}
       <span className="text-xs font-medium text-white/40 tracking-widest uppercase mx-auto">
         {title}
       </span>

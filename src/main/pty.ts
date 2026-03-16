@@ -1,7 +1,19 @@
-import { spawn as ptySpawn, IPty } from 'node-pty';
 import os from 'os';
 import { EventEmitter } from 'events';
 import { randomUUID } from 'crypto';
+
+// Try to load node-pty; it requires native compilation for Electron's ABI
+let ptySpawn: typeof import('node-pty').spawn | null = null;
+type IPty = import('node-pty').IPty;
+
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const nodePty = require('node-pty');
+  ptySpawn = nodePty.spawn;
+  console.log('[PTY] node-pty loaded successfully');
+} catch (err) {
+  console.warn('[PTY] node-pty not available — terminal features disabled. Run `npx @electron/rebuild` to fix.');
+}
 
 /**
  * Represents a single PTY (pseudo-terminal) session
@@ -9,7 +21,7 @@ import { randomUUID } from 'crypto';
 class PtySession extends EventEmitter {
   id: string;
   cwd: string;
-  pty: IPty;
+  pty: IPty | null = null;
   history: string = '';
   private readonly MAX_HISTORY = 100 * 1024; // 100KB
 
@@ -17,6 +29,10 @@ class PtySession extends EventEmitter {
     super();
     this.id = randomUUID();
     this.cwd = cwd;
+
+    if (!ptySpawn) {
+      throw new Error('node-pty is not available. Run `npx @electron/rebuild` to compile native modules.');
+    }
 
     // Determine the shell based on platform
     const shell = this.getShell();
@@ -138,7 +154,7 @@ class PtySession extends EventEmitter {
    */
   write(data: string): void {
     try {
-      this.pty.write(data);
+      this.pty?.write(data);
     } catch (error) {
       console.error(`Failed to write to PTY ${this.id}:`, error);
     }
@@ -149,7 +165,7 @@ class PtySession extends EventEmitter {
    */
   resize(cols: number, rows: number): void {
     try {
-      this.pty.resize(cols, rows);
+      this.pty?.resize(cols, rows);
     } catch (error) {
       console.error(`Failed to resize PTY ${this.id}:`, error);
     }
@@ -160,7 +176,7 @@ class PtySession extends EventEmitter {
    */
   kill(): void {
     try {
-      this.pty.kill();
+      this.pty?.kill();
     } catch (error) {
       console.error(`Failed to kill PTY ${this.id}:`, error);
     }
@@ -175,9 +191,20 @@ class PtyManager extends EventEmitter {
   private readonly MAX_SESSIONS = 5;
 
   /**
+   * Check if PTY support is available
+   */
+  get available(): boolean {
+    return ptySpawn !== null;
+  }
+
+  /**
    * Create a new PTY session
    */
   create(cwd?: string): string {
+    if (!this.available) {
+      throw new Error('Terminal not available — node-pty native module not loaded. Run `npx @electron/rebuild` to fix.');
+    }
+
     // Check if we've hit the maximum number of concurrent sessions
     if (this.sessions.size >= this.MAX_SESSIONS) {
       throw new Error(`Maximum concurrent sessions (${this.MAX_SESSIONS}) reached`);
@@ -269,7 +296,7 @@ class PtyManager extends EventEmitter {
       result.push({
         id: session.id,
         cwd: session.cwd,
-        pid: session.pty.pid,
+        pid: session.pty?.pid ?? -1,
       });
     }
     return result;

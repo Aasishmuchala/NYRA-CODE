@@ -7,7 +7,6 @@ import React, { useState, useEffect, useCallback } from 'react'
 import {
   Package,
   Puzzle,
-  Power,
   Trash2,
   ExternalLink,
   Download,
@@ -55,7 +54,7 @@ interface PluginManagerProps {
 
 // ── Plugin Manager Component ───────────────────────────────────────────────────
 
-export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
+export const PluginManager: React.FC<PluginManagerProps> = ({ onClose: _onClose }) => {
   const [plugins, setPlugins] = useState<InstalledPlugin[]>([])
   const [loading, setLoading] = useState(false)
   const [installUrl, setInstallUrl] = useState('')
@@ -190,11 +189,11 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
 
       {/* Error banner */}
       {error && (
-        <div className="mx-4 mt-4 p-3 bg-red-400/10 border border-red-400/20 rounded-lg flex items-start gap-2">
-          <div className="text-red-400 text-sm">{error}</div>
+        <div className="mx-4 mt-4 p-3 bg-blush-400/10 border border-blush-400/20 rounded-lg flex items-start gap-2">
+          <div className="text-blush-300 text-sm">{error}</div>
           <button
             onClick={() => setError(null)}
-            className="ml-auto text-red-400/60 hover:text-red-400 text-sm"
+            className="ml-auto text-blush-300/60 hover:text-blush-300 text-sm"
           >
             ✕
           </button>
@@ -354,7 +353,7 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
                         <button
                           onClick={() => handleUninstall(plugin.manifest.id)}
                           disabled={isUninstalling}
-                          className="ml-auto flex items-center gap-1 px-2 py-1 text-xs text-red-400/70 hover:text-red-400 disabled:opacity-50 transition-colors"
+                          className="ml-auto flex items-center gap-1 px-2 py-1 text-xs text-blush-300/70 hover:text-blush-300 disabled:opacity-50 transition-colors"
                         >
                           {isUninstalling ? (
                             <Loader2 className="w-3 h-3 animate-spin" />

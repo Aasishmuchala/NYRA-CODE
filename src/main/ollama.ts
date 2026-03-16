@@ -1,6 +1,7 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
+import { readAuthProfiles } from './auth-profiles';
 
 export const OLLAMA_BASE_URL = 'http://localhost:11434';
 export const OLLAMA_PROVIDER_ID = 'ollama';
@@ -65,7 +66,10 @@ export async function getOllamaModels(): Promise<OllamaModel[]> {
       throw new Error(`Ollama API error: ${response.statusText}`);
     }
 
-    const data = (await response.json()) as { models?: Array<{ name: string; size: number; modified_at: string }> };
+    const data = (await response.json()) as { models?: Array<{
+      name: string; size: number; modified_at: string;
+      details?: { parameter_size?: string; quantization_level?: string; family?: string };
+    }> };
 
     if (!data.models || !Array.isArray(data.models)) {
       return [];
@@ -76,6 +80,8 @@ export async function getOllamaModels(): Promise<OllamaModel[]> {
       name: model.name,
       size: model.size,
       modifiedAt: model.modified_at,
+      parameterSize: model.details?.parameter_size,
+      quantization: model.details?.quantization_level,
     }));
   } catch (error) {
     console.error('Failed to fetch Ollama models:', error);
@@ -97,39 +103,53 @@ export async function getOllamaProviderDef(): Promise<OllamaProvider> {
 }
 
 /**
- * Syncs Ollama configuration to OpenClaw auth-profiles
+ * Syncs Ollama configuration + available models to OpenClaw auth-profiles.
+ *
+ * Uses the shared readAuthProfiles/writeAuthProfiles infrastructure from
+ * auth-profiles.ts so we don't risk overwriting other providers' credentials.
+ *
+ * Returns the number of models synced so the renderer can show feedback.
  */
-export async function syncOllamaToOpenClaw(): Promise<void> {
+export async function syncOllamaToOpenClaw(): Promise<{ success: boolean; modelCount: number; error?: string }> {
   try {
-    const authProfilesPath = path.join(os.homedir(), '.openclaw', 'agents', 'main', 'agent', 'auth-profiles.json');
-    const authProfilesDir = path.dirname(authProfilesPath);
-
-    // Ensure directory exists
-    if (!fs.existsSync(authProfilesDir)) {
-      fs.mkdirSync(authProfilesDir, { recursive: true });
+    // 1. Check if Ollama is actually running
+    const online = await isOllamaRunning();
+    if (!online) {
+      return { success: false, modelCount: 0, error: 'Ollama is not running. Start it first.' };
     }
 
-    // Read existing profiles or create empty object
-    let profiles: Record<string, unknown> = {};
-    if (fs.existsSync(authProfilesPath)) {
-      try {
-        const content = fs.readFileSync(authProfilesPath, 'utf-8');
-        profiles = JSON.parse(content);
-      } catch {
-        profiles = {};
-      }
-    }
+    // 2. Get available models
+    const models = await getOllamaModels();
 
-    // Add or update Ollama profile
-    profiles['ollama'] = {
+    // 3. Read existing profiles via shared infrastructure
+    const profiles = readAuthProfiles();
+
+    // 4. Write Ollama profile with proper format
+    //    Key: "ollama:default" (follows the "provider:profile" convention)
+    //    We use type "local" to distinguish from api-key/oauth-token providers
+    (profiles as Record<string, unknown>)['ollama:default'] = {
+      type: 'local',
       baseUrl: OLLAMA_BASE_URL,
+      models: models.map(m => ({
+        id: m.id,
+        name: m.name,
+        size: m.size,
+        parameterSize: m.parameterSize,
+        quantization: m.quantization,
+      })),
     };
 
-    // Write back
-    fs.writeFileSync(authProfilesPath, JSON.stringify(profiles, null, 2));
+    // 5. Write back using shared path + permissions
+    const authProfilesPath = path.join(os.homedir(), '.openclaw', 'agents', 'main', 'agent', 'auth-profiles.json');
+    const authProfilesDir = path.dirname(authProfilesPath);
+    fs.mkdirSync(authProfilesDir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(authProfilesPath, JSON.stringify(profiles, null, 2), { encoding: 'utf8', mode: 0o600 });
+
+    console.log(`[Ollama] Synced ${models.length} model(s) to OpenClaw auth-profiles`);
+    return { success: true, modelCount: models.length };
   } catch (error) {
     console.error('Failed to sync Ollama to OpenClaw:', error);
-    throw error;
+    return { success: false, modelCount: 0, error: String(error) };
   }
 }
 

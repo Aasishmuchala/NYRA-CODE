@@ -100,7 +100,7 @@ const ModelComparisonColumn: React.FC<{
             <Loader2 className="w-5 h-5 animate-spin" />
           </div>
         ) : response?.error ? (
-          <div className="text-red-400 text-xs">Error: {response.error}</div>
+          <div className="text-blush-300 text-xs">Error: {response.error}</div>
         ) : hasContent ? (
           <div className="font-mono text-white/80 whitespace-pre-wrap break-words">
             {response.content}
@@ -249,8 +249,6 @@ export const ModelComparison: React.FC<ModelComparisonProps> = ({
     onSelectResponse?.(modelId, content);
     onClose();
   };
-
-  const columnCount = selectedModels.length || 1;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col">

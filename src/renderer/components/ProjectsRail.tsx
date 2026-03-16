@@ -39,7 +39,9 @@ export const ProjectsRail: React.FC<Props> = ({
   const [, setHovered] = useState<string | null>(null)
 
   return (
-    <div className="w-[52px] h-full bg-[#0a0a0a] border-r border-white/[0.06] flex flex-col items-center py-3 gap-1.5 flex-shrink-0">
+    <div className="w-[52px] h-full bg-black/40 border-r border-white/[0.06] flex flex-col items-center gap-1.5 flex-shrink-0">
+      {/* macOS traffic lights region — draggable, reserves space */}
+      <div className="h-11 w-full flex-shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
 
       {/* All chats button */}
       <Tooltip label="All Chats">

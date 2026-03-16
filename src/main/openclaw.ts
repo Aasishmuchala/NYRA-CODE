@@ -13,10 +13,15 @@
 import { EventEmitter } from 'events'
 import { ChildProcess, spawn, execSync } from 'child_process'
 import * as net from 'net'
+import * as os from 'os'
 import * as path from 'path'
 import * as fs from 'fs'
 import { app } from 'electron'
-import { buildGatewayEnvSecrets, ensureGatewayConfig, readRefreshedTokens } from './auth-profiles'
+
+const IS_WIN = process.platform === 'win32'
+const PATH_SEP = IS_WIN ? ';' : ':'
+const HOME_DIR = os.homedir()
+import { buildGatewayEnvSecrets, ensureGatewayConfig, ensureNyraDevicePaired, ensureOpenClawJsonOrigins, readRefreshedTokens } from './auth-profiles'
 import { loadApiKey, saveApiKey } from './providers'
 
 export const GATEWAY_HOST = '127.0.0.1'
@@ -52,8 +57,15 @@ class OpenClawManager extends EventEmitter {
   async initialize(): Promise<void> {
     this.setStatus('checking')
 
-    // 0. Ensure OpenClaw config + auth-profiles are in sync
+    // 0. Ensure OpenClaw config + auth-profiles + device identity are in sync.
+    //    This MUST run before any connection attempt so the device is pre-registered
+    //    as a paired device in the gateway config.
     ensureGatewayConfig()
+    ensureOpenClawJsonOrigins()
+
+    // 0b. Write device directly to ~/.openclaw/devices/paired.json — the file
+    //     the gateway ACTUALLY reads for device-auth (not openclaw.json!)
+    ensureNyraDevicePaired()
 
     // 1. Check if gateway is already up (another process may have started it)
     const alreadyUp = await this.isPortOpen(GATEWAY_HOST, GATEWAY_PORT)
@@ -106,30 +118,36 @@ class OpenClawManager extends EventEmitter {
     )
     if (fs.existsSync(resourcesBin)) return resourcesBin
 
-    // 2b. Check PATH
+    // 2b. Check PATH (platform-specific lookup command)
     try {
-      const found = execSync('which openclaw 2>/dev/null || where openclaw 2>nul', {
+      const lookupBin = IS_WIN ? 'where' : 'which'
+      const found = execSync(`${lookupBin} openclaw`, {
         encoding: 'utf8',
-        timeout: 3000
-      }).trim()
+        timeout: 3000,
+        stdio: 'pipe',
+      }).trim().split(/\r?\n/)[0]  // `where` on Windows can return multiple lines
       if (found && fs.existsSync(found)) return found
     } catch {
       // not found in PATH
     }
 
-    // 2c. Check common global npm paths
-    const npmGlobalBins = [
-      path.join(process.env.HOME ?? '', '.npm-global', 'bin', 'openclaw'),
-      path.join(process.env.APPDATA ?? '', 'npm', 'openclaw.cmd'),
-      '/usr/local/bin/openclaw',
-      '/opt/homebrew/bin/openclaw'
-    ]
+    // 2c. Check common global npm paths (platform-aware)
+    const npmGlobalBins = IS_WIN
+      ? [
+          path.join(process.env.APPDATA ?? '', 'npm', 'openclaw.cmd'),
+          path.join(HOME_DIR, '.npm-global', 'openclaw.cmd'),
+        ]
+      : [
+          path.join(HOME_DIR, '.npm-global', 'bin', 'openclaw'),
+          '/usr/local/bin/openclaw',
+          '/opt/homebrew/bin/openclaw',
+        ]
     for (const p of npmGlobalBins) {
       if (fs.existsSync(p)) return p
     }
 
     // 2d. Check nvm-managed Node installations (any v22+)
-    const nvmDir = path.join(process.env.HOME ?? process.env.USERPROFILE ?? '', '.nvm', 'versions', 'node')
+    const nvmDir = path.join(HOME_DIR, '.nvm', 'versions', 'node')
     if (fs.existsSync(nvmDir)) {
       try {
         const versions = fs.readdirSync(nvmDir)
@@ -150,9 +168,9 @@ class OpenClawManager extends EventEmitter {
   private installOpenClaw(): Promise<boolean> {
     return new Promise((resolve) => {
       this.emit('installing', 'Running: npm install -g openclaw ...')
-      const proc = spawn('npm', ['install', '-g', 'openclaw'], {
+      const proc = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install', '-g', 'openclaw'], {
         stdio: ['ignore', 'pipe', 'pipe'],
-        shell: true
+        shell: false
       })
 
       proc.stdout?.on('data', (d) => this.emit('install-log', d.toString()))
@@ -174,7 +192,7 @@ class OpenClawManager extends EventEmitter {
   //            an older Node via nvm) ────────────────────────────────────────
   private resolveNodeV22BinDir(): string | null {
     // Look in ~/.nvm/versions/node/ for any v22, v23, v24 … installation
-    const nvmDir = path.join(process.env.HOME ?? process.env.USERPROFILE ?? '', '.nvm', 'versions', 'node')
+    const nvmDir = path.join(HOME_DIR, '.nvm', 'versions', 'node')
     if (!fs.existsSync(nvmDir)) return null
     try {
       const versions = fs.readdirSync(nvmDir)
@@ -205,8 +223,10 @@ class OpenClawManager extends EventEmitter {
 
     const cliBin = (await this.resolveCliBinary()) ?? 'openclaw'
 
-    // Ensure OpenClaw config directory + gateway config exist
+    // Ensure OpenClaw config directory + gateway config exist (with allowed origins)
     ensureGatewayConfig()
+    ensureOpenClawJsonOrigins()
+    ensureNyraDevicePaired()
 
     // Build an env where Node v22+ comes first in PATH so that the openclaw
     // shebang (#!/usr/bin/env node) picks the right version.
@@ -216,7 +236,7 @@ class OpenClawManager extends EventEmitter {
     const spawnEnv = {
       ...process.env,
       ...secretEnv,
-      ...(nodeV22BinDir ? { PATH: `${nodeV22BinDir}:${process.env.PATH ?? ''}` } : {}),
+      ...(nodeV22BinDir ? { PATH: `${nodeV22BinDir}${PATH_SEP}${process.env.PATH ?? ''}` } : {}),
     }
 
     const trySpawn = (extraArgs: string[] = []): void => {
@@ -225,7 +245,7 @@ class OpenClawManager extends EventEmitter {
       this.gatewayProcess = spawn(cliBin, args, {
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: false,
-        shell: process.platform === 'win32',
+        shell: false,
         env: spawnEnv,
       })
       this.gatewayProcess.stdout?.on('data', (d) => {
@@ -291,7 +311,8 @@ class OpenClawManager extends EventEmitter {
       // Kill our own process handle if we have one
       if (this.gatewayProcess) {
         this.gatewayProcess.removeAllListeners('close')
-        this.gatewayProcess.kill('SIGTERM')
+        // Windows doesn't support POSIX signals; .kill() without args does a forceful stop
+        IS_WIN ? this.gatewayProcess.kill() : this.gatewayProcess.kill('SIGTERM')
         this.gatewayProcess = null
       }
       // Also ask openclaw to stop (in case a different process owns the gateway)
@@ -386,7 +407,7 @@ class OpenClawManager extends EventEmitter {
 
     if (this.gatewayProcess) {
       console.log('[OpenClaw] Shutting down gateway process')
-      this.gatewayProcess.kill('SIGTERM')
+      IS_WIN ? this.gatewayProcess.kill() : this.gatewayProcess.kill('SIGTERM')
       this.gatewayProcess = null
     }
     this.setStatus('stopped')
