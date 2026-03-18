@@ -172,7 +172,7 @@ class CrossOrgProtocol extends EventEmitter {
   /**
    * Discover remote endpoints (placeholder for mDNS-style discovery or registry)
    */
-  discover(): Map<string, string> {
+  discoverEndpoints(): Map<string, string> {
     return new Map(this.remoteEndpoints);
   }
 
