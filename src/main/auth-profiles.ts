@@ -64,12 +64,18 @@ export type AuthProfile = ApiKeyProfile | OAuthTokenProfile
 // ── Map Nyra provider IDs to OpenClaw provider identifiers ──────────────────
 
 const PROVIDER_MAP: Record<string, string> = {
-  'openai':    'openai-codex:default',
-  'anthropic': 'anthropic:default',
-  'gemini':    'google-gemini:default',
-  'copilot':   'github-copilot:github',
-  'openrouter': 'openrouter:default',
-  'ollama':    'ollama:default',
+  // Short UI IDs (used by ModelSelector and app logic)
+  'openai':         'openai-codex:default',
+  'anthropic':      'anthropic:default',
+  'gemini':         'google-gemini:default',
+  'copilot':        'github-copilot:github',
+  'openrouter':     'openrouter:default',
+  'ollama':         'ollama:default',
+  // OpenClaw-format prefixes (used by PROVIDER_CATALOG model IDs, e.g. "google-gemini/...")
+  // These arrive when setActiveModel is called with catalog IDs from SettingsPanel
+  'openai-codex':   'openai-codex:default',
+  'google-gemini':  'google-gemini:default',
+  'github-copilot': 'github-copilot:github',
 }
 
 // ── Map UI model prefixes → OpenClaw model prefixes ─────────────────────────

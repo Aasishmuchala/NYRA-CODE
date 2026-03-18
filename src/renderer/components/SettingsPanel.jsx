@@ -396,7 +396,18 @@ export const SettingsPanel = ({ onClose }) => {
                             const ok = await window.nyra.providers.saveKey(def.id, key);
                             if (ok) {
                                 setKeyInputs(prev => ({ ...prev, [def.id]: '' }));
+                                // Auto-activate this provider's first model in the gateway
+                                // so it's immediately usable without a second click
+                                const firstModel = def.models[0]?.id;
+                                if (firstModel) {
+                                    await window.nyra.providers.setModel(def.id, firstModel);
+                                }
                                 setProviderStates(await window.nyra.providers.list());
+                            } else {
+                                setProviderErrors(prev => ({
+                                    ...prev,
+                                    [def.id]: 'Failed to save key — system encryption may be unavailable. Try restarting the app.',
+                                }));
                             }
                             setSavingKey(null);
                         }} disabled={!keyInputs[def.id]?.trim() || savingKey === def.id} className="px-3 py-2 bg-sage-600/80 hover:bg-sage-500 disabled:bg-white/[0.05] disabled:text-white/20 text-white text-xs rounded-lg transition-colors font-medium flex items-center gap-1.5">

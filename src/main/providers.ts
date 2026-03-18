@@ -16,6 +16,7 @@ import * as path from 'path'
 import {
   syncProviderKey, removeProviderProfile,
   syncAllProviders, ensureGatewayConfig,
+  switchActiveModel,
 } from './auth-profiles'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -295,10 +296,25 @@ export function setActiveModel(providerId: string, modelId: string): boolean {
   const cfg = readConfig()
   if (!cfg.providers) cfg.providers = {}
   if (!cfg.providers[providerId]) {
-    cfg.providers[providerId] = { enabled: false }
+    // Don't create a disabled entry — only update if provider is already configured
+    // (key file presence is the source of truth for whether a provider is set up)
+    if (!hasApiKey(providerId)) {
+      console.warn(`[Providers] setActiveModel called for unconfigured provider "${providerId}" — skipping`)
+      return false
+    }
+    cfg.providers[providerId] = { enabled: true }
   }
   cfg.providers[providerId].activeModel = modelId
   writeConfig(cfg)
+
+  // ── Keep gateway in sync — write model change to auth-profiles.json ──────
+  // switchActiveModel handles both UI-format ("gemini/...") and OpenClaw-format
+  // ("google-gemini/...") model IDs via the extended PROVIDER_MAP.
+  const synced = switchActiveModel(modelId)
+  if (!synced) {
+    console.warn(`[Providers] setActiveModel: gateway sync failed for "${modelId}" — provider may not have a key stored yet`)
+  }
+
   return true
 }
 
