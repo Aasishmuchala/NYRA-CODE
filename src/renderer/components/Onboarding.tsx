@@ -194,6 +194,16 @@ export const Onboarding: React.FC<Props> = ({ onComplete }) => {
     }
   }, [])
 
+  const handleDisconnect = useCallback(async (providerId: string) => {
+    setError(null)
+    try {
+      await window.nyra.providers.removeKey(providerId)
+      setStates(await window.nyra.providers.list())
+    } catch (err) {
+      setError(`Disconnect failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
+  }, [])
+
   const handleRefreshStates = useCallback(async () => {
     setStates(await window.nyra.providers.list())
   }, [])
@@ -364,6 +374,7 @@ export const Onboarding: React.FC<Props> = ({ onComplete }) => {
               onSaveKey={handleSaveKey}
               onStartOAuth={handleStartOAuth}
               onGithubDeviceFlow={handleGithubDeviceFlow}
+              onDisconnect={handleDisconnect}
               onRefreshStates={handleRefreshStates}
               compact
             />
