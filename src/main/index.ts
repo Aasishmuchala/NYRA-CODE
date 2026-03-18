@@ -16,7 +16,8 @@ import {
 } from 'electron'
 import { join } from 'path'
 import { openClawManager } from './openclaw'
-import { registerIpcHandlers, cleanupIpcListeners } from './ipc'
+import { registerIpcHandlers } from './ipc'
+import { cleanupIpcListeners } from './ipc-cleanup'
 import { createTray, destroyTray } from './tray'
 import { initAutoUpdater } from './updater'
 import { startWsProxy, stopWsProxy } from './wsproxy'
@@ -28,11 +29,15 @@ import { ptyManager } from './pty'
 import { codebaseIndexer } from './indexer'
 import { mcpRuntime } from './mcp-runtime'
 
+// ── Job Queue ─────────────────────────────────────────────────────────────────
+import { startProcessing as startJobQueue, stopProcessing as stopJobQueue, createQueue } from './job-queue'
+
 // ── Phase 1.1: Provider Abstraction Layer ────────────────────────────────────
 import { providerRegistry } from './providers/provider-registry'
 import { OpenAIProvider } from './providers/openai-provider'
 import { AnthropicProvider } from './providers/anthropic-provider'
 import { OllamaProvider } from './providers/ollama-provider'
+import { GeminiProvider } from './providers/gemini-provider'
 import { loadApiKey } from './providers'
 
 // ── Phase 1.3: Custom Agent Framework ────────────────────────────────────────
@@ -348,6 +353,14 @@ app.whenReady().then(async () => {
       console.log('[Main] Anthropic provider registered (direct API)')
     }
 
+    const geminiKey = loadApiKey('gemini')
+    if (geminiKey) {
+      const gemini = new GeminiProvider({ apiKey: geminiKey })
+      await gemini.initialize()
+      providerRegistry.register(gemini)
+      console.log('[Main] Gemini provider registered (direct API)')
+    }
+
     // Ollama is always registered (local, no API key needed)
     const ollama = new OllamaProvider({})
     await ollama.initialize()
@@ -360,6 +373,11 @@ app.whenReady().then(async () => {
   } catch (err) {
     console.warn('[Main] Provider registry init error (non-fatal, wsproxy fallback active):', err)
   }
+
+  // ── Job Queue ──────────────────────────────────────────────────────────────
+  createQueue({ maxConcurrent: 3, retryDelay: 5000, jobTimeout: 300_000 })
+  startJobQueue()
+  console.log('[Main] Job queue started (maxConcurrent=3)')
 
   // ── Phase 1.3: Initialize Custom Agent Framework ──────────────────────────
   try {
@@ -536,6 +554,9 @@ app.on('before-quit', async () => {
   await mcpRuntime.shutdownAll().catch(() => {})
   await codebaseIndexer.close().catch(() => {})
   cleanupIpcListeners()
+
+  // Stop job queue
+  stopJobQueue()
 
   // Shutdown Year 1-5 services
   try {
