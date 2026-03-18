@@ -81,6 +81,7 @@ import { codebaseIndexer } from './indexer'
 // ── Cowork modules ──────────────────────────────────────────────────────────
 import { setupEventForwarding } from './event-bus'
 import * as taskManager from './task-manager'
+import * as jobQueue from './job-queue'
 import * as folderManager from './folder-manager'
 import * as contextEngine from './context-engine'
 import * as approvalPipeline from './approval-pipeline'
@@ -200,19 +201,9 @@ function withLock<T>(fn: () => Promise<T>): Promise<T> {
   return p
 }
 
-// ── Cleanup functions for event listeners ────────────────────────────────────
-const cleanupFns: Array<() => void> = []
-
-export function cleanupIpcListeners(): void {
-  for (const fn of cleanupFns) {
-    try {
-      fn()
-    } catch (err) {
-      console.error('[IPC] Cleanup error:', err)
-    }
-  }
-  cleanupFns.length = 0
-}
+// ── Cleanup functions for event listeners (imported from ipc-cleanup.ts) ──────
+import { cleanupFns, cleanupIpcListeners } from './ipc-cleanup'
+export { cleanupIpcListeners }
 
 // ── Registration ───────────────────────────────────────────────────────────────
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
@@ -1467,6 +1458,16 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('cowork:task:queued',        () => taskManager.getQueuedTasks())
   ipcMain.handle('cowork:task:pending-approvals', () => taskManager.getPendingApprovals())
 
+  // ── Job Queue ──────────────────────────────────────────────────────────────
+  ipcMain.handle('jobs:queue',      () => jobQueue.getQueue())
+  ipcMain.handle('jobs:active',     () => jobQueue.getActive())
+  ipcMain.handle('jobs:stats',      () => jobQueue.getStats())
+  ipcMain.handle('jobs:get',        (_e, jobId: string) => jobQueue.getJob(jobId))
+  ipcMain.handle('jobs:by-task',    (_e, taskId: string) => jobQueue.getJobsByTask(taskId))
+  ipcMain.handle('jobs:cancel',     (_e, jobId: string) => jobQueue.cancel(jobId))
+  ipcMain.handle('jobs:cancel-task',(_e, taskId: string) => jobQueue.cancelByTask(taskId))
+  ipcMain.handle('jobs:is-processing', () => jobQueue.isProcessing())
+
   // ── Agents ──────────────────────────────────────────────────────────────────
   ipcMain.handle('cowork:agent:get',          (_e, id: string) => agentRegistry.getAgent(id))
   ipcMain.handle('cowork:agent:list',         () => agentRegistry.getAllAgents())
@@ -2517,6 +2518,24 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     try { return { success: true, result: nyraGuard.shutdown() } }
     catch (err: any) { return { success: false, error: err.message } }
   })
+  ipcMain.handle('nyraGuard:generateReport', async (_e) => {
+    try {
+      const issues = (nyraGuard as any).getIssues?.() || []
+      const report = {
+        generatedAt: Date.now(),
+        totalIssues: issues.length,
+        bySeverity: {
+          critical: issues.filter((i: any) => i.severity === 'critical').length,
+          high: issues.filter((i: any) => i.severity === 'high').length,
+          medium: issues.filter((i: any) => i.severity === 'medium').length,
+          low: issues.filter((i: any) => i.severity === 'low').length,
+        },
+        issues,
+      }
+      return { success: true, result: report }
+    }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
 
   // ── Year 1: Telemetry ──────────────────────────────────────────────────────────
   ipcMain.handle('telemetry:init', async (_e) => {
@@ -2568,6 +2587,28 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     catch (err: any) { return { success: false, error: err.message } }
   })
 
+  // ── telemetryService:* aliases (preload uses telemetryService: prefix) ────────
+  ipcMain.handle('telemetryService:init', async (_e) => {
+    try { return { success: true, result: telemetryService.init() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('telemetryService:track', async (_e, category: string, action: string, properties?: Record<string, any>) => {
+    try { return { success: true, result: telemetryService.trackEvent(category, action, properties) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('telemetryService:getStats', async (_e) => {
+    try { return { success: true, result: (telemetryService as any).getStats?.() || { events: 0, crashes: 0 } } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('telemetryService:setOptIn', async (_e, optIn: boolean) => {
+    try { return { success: true, result: telemetryService.setEnabled(optIn) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('telemetryService:shutdown', async (_e) => {
+    try { return { success: true, result: telemetryService.shutdown() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+
   // ── Year 2: Collaboration ─────────────────────────────────────────────────────
   // PriorityMessageQueue
   ipcMain.handle('priorityQueue:init', async (_e) => {
@@ -2596,6 +2637,16 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
   ipcMain.handle('priorityQueue:pruneExpired', async (_e) => {
     try { return { success: true, result: priorityQueue.pruneExpired() } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+  ipcMain.handle('priorityQueue:getTotalPending', async (_e) => {
+    try {
+      let total = 0
+      for (const agentId of (priorityQueue as any).agentQueues?.keys?.() || []) {
+        total += priorityQueue.getQueueSize(agentId)
+      }
+      return { success: true, result: total }
+    }
     catch (err: any) { return { success: false, error: err.message } }
   })
   ipcMain.handle('priorityQueue:shutdown', async (_e) => {

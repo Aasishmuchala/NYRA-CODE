@@ -1713,6 +1713,18 @@ const nyraApi = {
     getTrendingTopics:      (): Promise<any>                      => ipcRenderer.invoke('agentNetwork:getTrendingTopics'),
     getNetworkStats:        (): Promise<any>                      => ipcRenderer.invoke('agentNetwork:getNetworkStats'),
   },
+
+  // ── Job Queue ──────────────────────────────────────────────────────────────
+  jobs: {
+    queue:        (): Promise<any[]>              => ipcRenderer.invoke('jobs:queue'),
+    active:       (): Promise<any[]>              => ipcRenderer.invoke('jobs:active'),
+    stats:        (): Promise<{ queued: number; running: number; completed: number; failed: number }> => ipcRenderer.invoke('jobs:stats'),
+    get:          (jobId: string): Promise<any>   => ipcRenderer.invoke('jobs:get', jobId),
+    byTask:       (taskId: string): Promise<any[]>=> ipcRenderer.invoke('jobs:by-task', taskId),
+    cancel:       (jobId: string): Promise<boolean>   => ipcRenderer.invoke('jobs:cancel', jobId),
+    cancelTask:   (taskId: string): Promise<number>   => ipcRenderer.invoke('jobs:cancel-task', taskId),
+    isProcessing: (): Promise<boolean>            => ipcRenderer.invoke('jobs:is-processing'),
+  },
 }
 
 contextBridge.exposeInMainWorld('nyra', nyraApi)
