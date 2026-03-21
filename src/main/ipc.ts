@@ -510,8 +510,28 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // ── Providers ───────────────────────────────────────────────────────────────
   ipcMain.handle('providers:list',         () => listProviders())
   ipcMain.handle('providers:catalog',      () => getCatalog())
-  ipcMain.handle('providers:save-key',     (_e, id: string, key: string) => saveApiKey(id, key))
-  ipcMain.handle('providers:remove-key',   (_e, id: string)              => removeApiKey(id))
+  ipcMain.handle('providers:save-key',     async (_e, id: string, key: string) => {
+    const ok = saveApiKey(id, key)
+    if (ok) {
+      // Restart the gateway so it picks up the new API key via env vars.
+      // Without this, keys saved after gateway startup are invisible to it.
+      console.log(`[IPC] Key saved for ${id} — restarting gateway to refresh env`)
+      openClawManager.restart().catch(err =>
+        console.warn('[IPC] Gateway restart after key save failed:', err)
+      )
+    }
+    return ok
+  })
+  ipcMain.handle('providers:remove-key',   async (_e, id: string) => {
+    const ok = removeApiKey(id)
+    // Also restart gateway to clear stale env vars
+    if (ok) {
+      openClawManager.restart().catch(err =>
+        console.warn('[IPC] Gateway restart after key removal failed:', err)
+      )
+    }
+    return ok
+  })
   ipcMain.handle('providers:set-model',    (_e, id: string, modelId: string) => setActiveModel(id, modelId))
   ipcMain.handle('providers:resolve',      () => resolveProvider())
   ipcMain.handle('providers:open-oauth',   (_e, url: string) => {
@@ -523,8 +543,27 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('providers:resync',       () => { syncProvidersToOpenClaw(); return true })
 
   // ── OAuth flows (EasyClaw-parity: OpenAI PKCE, Gemini CLI, GitHub device)
-  ipcMain.handle('providers:start-oauth',  (_e, providerId: string) => startOAuthFlow(providerId, mainWindow))
-  ipcMain.handle('providers:github-device-flow', () => startGitHubDeviceFlow(mainWindow))
+  // After a successful OAuth flow, restart the gateway to pick up the new token.
+  ipcMain.handle('providers:start-oauth',  async (_e, providerId: string) => {
+    const result = await startOAuthFlow(providerId, mainWindow)
+    if (result.success) {
+      console.log(`[IPC] OAuth succeeded for ${providerId} — restarting gateway`)
+      openClawManager.restart().catch(err =>
+        console.warn('[IPC] Gateway restart after OAuth failed:', err)
+      )
+    }
+    return result
+  })
+  ipcMain.handle('providers:github-device-flow', async () => {
+    const result = await startGitHubDeviceFlow(mainWindow)
+    if (result.success) {
+      console.log('[IPC] GitHub device flow succeeded — restarting gateway')
+      openClawManager.restart().catch(err =>
+        console.warn('[IPC] Gateway restart after GitHub flow failed:', err)
+      )
+    }
+    return result
+  })
   ipcMain.handle('providers:oauth-availability', () => getOAuthAvailability())
 
   // ── MCP Config ──────────────────────────────────────────────────────────────
@@ -1010,6 +1049,107 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       return { success: true }
     }
     return { success: false, error: 'Stream not found' }
+  })
+
+  // ── Direct Chat (bypasses gateway — fallback when OpenClaw can't route) ──
+  // Creates a provider instance on-the-fly from saved keys and streams directly.
+  // The renderer calls this when the WebSocket gateway fails (rate limit, no provider, etc.)
+  ipcMain.handle('chat:direct-stream', async (_e, opts: {
+    streamId: string
+    messages: Array<{ role: string; content: any }>
+    maxTokens?: number
+    temperature?: number
+  }) => {
+    const { streamId, messages, maxTokens, temperature } = opts
+
+    // 1. Resolve the active provider from saved config
+    const resolved = resolveProvider()
+    if (!resolved) {
+      return { success: false, error: 'No configured provider with an API key. Please add an API key in Settings.' }
+    }
+
+    const { providerId, apiKey, model } = resolved
+
+    // 2. Create a provider instance on-the-fly
+    let provider: import('./providers/provider-interface').LLMProvider
+    try {
+      if (providerId === 'openrouter') {
+        const { OpenRouterProvider } = await import('./providers/openrouter-provider')
+        provider = new OpenRouterProvider({ apiKey })
+      } else if (providerId === 'openai') {
+        const { OpenAIProvider } = await import('./providers/openai-provider')
+        provider = new OpenAIProvider({ apiKey })
+      } else if (providerId === 'anthropic') {
+        const { AnthropicProvider } = await import('./providers/anthropic-provider')
+        provider = new AnthropicProvider({ apiKey })
+      } else if (providerId === 'gemini') {
+        const { GeminiProvider } = await import('./providers/gemini-provider')
+        provider = new GeminiProvider({ apiKey })
+      } else {
+        // Fallback: try OpenAI-compatible for unknown providers
+        const { OpenAIProvider } = await import('./providers/openai-provider')
+        provider = new OpenAIProvider({ apiKey })
+      }
+    } catch (err: any) {
+      return { success: false, error: `Failed to create provider "${providerId}": ${err.message}` }
+    }
+
+    // 3. Determine the model to use
+    // Model IDs from PROVIDER_CATALOG use "provider-prefix/model" format.
+    // Strip the provider prefix for the API call (e.g. "openai-codex/gpt-4o" → "gpt-4o")
+    // But for OpenRouter, pass through as-is (e.g. "openrouter/anthropic/claude-opus-4-6" → "anthropic/claude-opus-4-6")
+    let apiModel = model || ''
+    if (providerId === 'openrouter' && apiModel.startsWith('openrouter/')) {
+      apiModel = apiModel.slice('openrouter/'.length) // "openrouter/anthropic/claude-opus-4-6" → "anthropic/claude-opus-4-6"
+    } else if (apiModel.includes('/')) {
+      apiModel = apiModel.split('/').slice(1).join('/') // "openai-codex/gpt-4o" → "gpt-4o"
+    }
+
+    const streamState = { cancelled: false }
+    activeStreams.set(streamId, streamState)
+
+    // 4. Fire and forget — stream chunks via push events
+    ;(async () => {
+      try {
+        mainWindow.webContents.send('stream:started', { streamId })
+        console.log(`[DirectChat] Starting direct stream: provider=${providerId}, model=${apiModel}`)
+
+        const generator = provider.chatStream({
+          model: apiModel,
+          messages: messages as any,
+          maxTokens: maxTokens || 4096,
+          temperature: temperature || 0.7,
+        })
+
+        let totalTokens = 0
+        for await (const chunk of generator) {
+          if (streamState.cancelled) break
+          if (chunk.content) {
+            totalTokens++
+            mainWindow.webContents.send('stream:chunk', {
+              streamId,
+              content: chunk.content,
+              done: chunk.done || false,
+              model: chunk.model,
+              usage: chunk.usage,
+            })
+          }
+          if (chunk.done) break
+        }
+
+        if (!streamState.cancelled) {
+          mainWindow.webContents.send('stream:done', { streamId, totalTokens })
+        }
+      } catch (err: any) {
+        if (!streamState.cancelled) {
+          mainWindow.webContents.send('stream:error', { streamId, error: err.message })
+        }
+      } finally {
+        activeStreams.delete(streamId)
+      }
+    })()
+
+    return { success: true, streamId, providerId, model: apiModel }
   })
 
   // ── Smart Model Router ─────────────────────────────────────────────────────

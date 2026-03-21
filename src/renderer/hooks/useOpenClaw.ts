@@ -249,6 +249,76 @@ export function useOpenClaw() {
         return { ...s, messages: msgs }
       }))
     }
+
+    // ── Direct API fallback: detect gateway-streamed error responses ──────
+    // Some gateways stream error messages as if they were assistant content
+    // (e.g. "⚠️ API rate limit reached"). Detect these and retry via direct API.
+    const currentSession = sessionsRef.current.find(s => s.id === sessionId)
+    const lastMsg = currentSession?.messages[currentSession.messages.length - 1]
+    const errorPatterns = ['rate limit', 'rate_limit', 'API rate limit', 'api error', 'unauthorized', 'authentication failed']
+    const assistantContent = lastMsg?.role === 'assistant' ? (lastMsg.content || '') : ''
+    const looksLikeError = assistantContent.length < 200 &&
+      errorPatterns.some(p => assistantContent.toLowerCase().includes(p))
+
+    if (looksLikeError && window.nyra?.streaming?.directStream) {
+      console.warn('[OpenClaw] Gateway streamed an error response — trying direct API fallback')
+      console.warn('[OpenClaw] Error content:', assistantContent)
+
+      // Collect user messages for the fallback
+      const chatMessages = (currentSession?.messages ?? [])
+        .filter(m => m.role === 'user' && m.content)
+        .map(m => ({ role: m.role, content: m.content }))
+
+      if (chatMessages.length > 0) {
+        const fallbackStreamId = `direct-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+
+        // Clear the error content and restart streaming
+        setSessions(prev => prev.map(s => {
+          if (s.id !== sessionId) return s
+          const msgs = [...s.messages]
+          const last = msgs[msgs.length - 1]
+          if (last?.role === 'assistant') {
+            msgs[msgs.length - 1] = { ...last, content: '' }
+          }
+          return { ...s, messages: msgs }
+        }))
+        setStreaming(true)
+        setStreamingPhase('generating')
+        streamingSessionRef.current = sessionId
+
+        window.nyra.streaming.directStream({
+          streamId: fallbackStreamId,
+          messages: chatMessages,
+          maxTokens: 4096,
+          temperature: 0.7,
+        }).then((result: any) => {
+          if (!result?.success) {
+            console.error('[OpenClaw] Direct fallback failed:', result?.error)
+            setSessions(prev => prev.map(s => {
+              if (s.id !== sessionId) return s
+              const msgs = [...s.messages]
+              const last = msgs[msgs.length - 1]
+              if (last?.role === 'assistant') {
+                msgs[msgs.length - 1] = { ...last, content: `⚠️ ${result?.error || 'No providers configured'}\n\nPlease add an API key in Settings.` }
+              }
+              return { ...s, messages: msgs }
+            }))
+            setStreaming(false)
+            streamingSessionRef.current = null
+            messageSendingRef.current = false
+          }
+          // If success, stream:chunk and stream:done events handle the rest
+        }).catch(() => {
+          setStreaming(false)
+          streamingSessionRef.current = null
+          messageSendingRef.current = false
+        })
+
+        // Don't clear streaming state yet — the direct stream will handle it
+        return
+      }
+    }
+
     if (streamingSessionRef.current === sessionId) {
       setStreaming(false)
       setStreamingPhase(null)
@@ -259,6 +329,108 @@ export function useOpenClaw() {
     messageSendingRef.current = false
     if (streamTimeoutRef.current) { clearTimeout(streamTimeoutRef.current); streamTimeoutRef.current = null }
   }, [])
+
+  // ── Direct API fallback (bypasses gateway when it can't route) ──────────────
+  // Called when the gateway streams an error (rate limit, auth failure, missing provider).
+  // Collects user messages from the session, calls chat:direct-stream IPC which
+  // resolves the provider from saved keys and streams directly to the LLM API.
+  const tryDirectApiFallback = useCallback((sessionId: string, gatewayError: string) => {
+    if (!window.nyra?.streaming?.directStream) {
+      // No direct stream support — show the original error
+      setSessions(prev => prev.map(s => {
+        if (s.id !== sessionId) return s
+        const msgs = [...s.messages]
+        const last = msgs[msgs.length - 1]
+        if (last?.role === 'assistant' && (!last.content || last.content === '')) {
+          msgs[msgs.length - 1] = { ...last, content: `⚠️ ${gatewayError}` }
+        }
+        return { ...s, messages: msgs }
+      }))
+      handleStreamDone(sessionId)
+      return
+    }
+
+    // Collect user messages for the fallback request
+    const currentSession = sessionsRef.current.find(s => s.id === sessionId)
+    const chatMessages = (currentSession?.messages ?? [])
+      .filter(m => m.role === 'user' && m.content)
+      .map(m => ({ role: m.role, content: m.content }))
+
+    if (chatMessages.length === 0) {
+      setSessions(prev => prev.map(s => {
+        if (s.id !== sessionId) return s
+        const msgs = [...s.messages]
+        const last = msgs[msgs.length - 1]
+        if (last?.role === 'assistant') {
+          msgs[msgs.length - 1] = { ...last, content: `⚠️ ${gatewayError}` }
+        }
+        return { ...s, messages: msgs }
+      }))
+      handleStreamDone(sessionId)
+      return
+    }
+
+    console.log('[OpenClaw] Falling back to direct API stream (bypassing gateway)')
+    const fallbackStreamId = `direct-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+
+    // Clear any error content and (re)start streaming state
+    setSessions(prev => prev.map(s => {
+      if (s.id !== sessionId) return s
+      const msgs = [...s.messages]
+      const last = msgs[msgs.length - 1]
+      if (last?.role === 'assistant') {
+        msgs[msgs.length - 1] = { ...last, content: '' }
+      }
+      return { ...s, messages: msgs }
+    }))
+    setStreaming(true)
+    setStreamingPhase('generating')
+    streamingSessionRef.current = sessionId
+
+    // Clear safety timeout — we're retrying
+    if (streamTimeoutRef.current) {
+      clearTimeout(streamTimeoutRef.current)
+      streamTimeoutRef.current = null
+    }
+
+    window.nyra.streaming.directStream({
+      streamId: fallbackStreamId,
+      messages: chatMessages,
+      maxTokens: 4096,
+      temperature: 0.7,
+    }).then((result: any) => {
+      if (!result?.success) {
+        console.error('[OpenClaw] Direct fallback also failed:', result?.error)
+        setSessions(prev => prev.map(s => {
+          if (s.id !== sessionId) return s
+          const msgs = [...s.messages]
+          const last = msgs[msgs.length - 1]
+          if (last?.role === 'assistant') {
+            msgs[msgs.length - 1] = { ...last, content: `⚠️ ${result?.error || gatewayError}\n\nPlease check your API key in Settings.` }
+          }
+          return { ...s, messages: msgs }
+        }))
+        setStreaming(false)
+        streamingSessionRef.current = null
+        messageSendingRef.current = false
+      }
+      // If success, stream events (onChunk/onDone/onError) handle the rest
+    }).catch((err: Error) => {
+      console.error('[OpenClaw] Direct fallback error:', err)
+      setSessions(prev => prev.map(s => {
+        if (s.id !== sessionId) return s
+        const msgs = [...s.messages]
+        const last = msgs[msgs.length - 1]
+        if (last?.role === 'assistant') {
+          msgs[msgs.length - 1] = { ...last, content: `⚠️ ${err.message}\n\nPlease check your API key in Settings.` }
+        }
+        return { ...s, messages: msgs }
+      }))
+      setStreaming(false)
+      streamingSessionRef.current = null
+      messageSendingRef.current = false
+    })
+  }, [handleStreamDone, handleStreamToken])
 
   // ── WebSocket connect ────────────────────────────────────────────────────────
   const connect = useCallback(async (source = 'unknown') => {
@@ -412,6 +584,11 @@ export function useOpenClaw() {
               // Agent run completed — finalize the stream
               // (Don't call handleStreamDone here — let the 'chat.final' event do it
               //  so we get the full accumulated text for correctness)
+            } else if (sKey && stream === 'lifecycle' && data?.phase === 'error') {
+              // Agent run failed — try direct API fallback before showing error
+              const errText = (data.error ?? 'Unknown error') as string
+              console.warn('[OpenClaw] Agent lifecycle error:', errText, '— trying direct API fallback')
+              tryDirectApiFallback(sKey, errText)
             }
             return
           }
@@ -462,16 +639,15 @@ export function useOpenClaw() {
               handleStreamDone(sessionKey)
             } else if (sessionKey && state === 'error') {
               const errMsg = (p.errorMessage ?? 'Unknown error') as string
-              setSessions(prev => prev.map(s => {
-                if (s.id !== sessionKey) return s
-                const msgs = [...s.messages]
-                const last = msgs[msgs.length - 1]
-                if (last?.role === 'assistant' && last.content === '') {
-                  msgs[msgs.length - 1] = { ...last, content: `⚠️ ${errMsg}` }
-                }
-                return { ...s, messages: msgs }
-              }))
-              handleStreamDone(sessionKey)
+              console.warn('[OpenClaw] Chat error event:', errMsg, '— trying direct API fallback')
+              // Don't show the error yet — try direct API fallback first.
+              // The agent lifecycle handler may have already started the fallback,
+              // so check if we're still streaming (fallback in progress).
+              if (!streamingSessionRef.current) {
+                // No fallback running — try now
+                tryDirectApiFallback(sessionKey, errMsg)
+              }
+              // If fallback is already running, let it handle the response
             }
             return
           }
@@ -786,20 +962,72 @@ export function useOpenClaw() {
           // If no content, this was just an ack — streaming events will follow
         },
         reject: (err: Error) => {
-          // Gateway explicitly rejected chat.send — show the error to the user
-          // instead of silently swallowing it. This is the #1 reason for
-          // "No response received" when the gateway rejects our message.
-          console.error('[OpenClaw] chat.send REJECTED:', err.message)
-          setSessions(prev => prev.map(s => {
-            if (s.id !== sessionId) return s
-            const msgs = [...s.messages]
-            const last = msgs[msgs.length - 1]
-            if (last?.role === 'assistant' && last.content === '') {
-              msgs[msgs.length - 1] = { ...last, content: `⚠️ Gateway error: ${err.message}\n\nThis usually means the session or model isn't recognized. Try starting a new chat.` }
-            }
-            return { ...s, messages: msgs }
-          }))
-          handleStreamDone(sessionId)
+          // Gateway explicitly rejected chat.send — try direct API fallback
+          // before showing an error to the user.
+          console.warn('[OpenClaw] chat.send REJECTED:', err.message, '— trying direct API fallback')
+
+          // Attempt direct streaming bypass
+          const fallbackStreamId = `direct-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+          const originalMessages = sessionsRef.current.find(s => s.id === sessionId)?.messages ?? []
+          const chatMessages = originalMessages
+            .filter(m => m.role === 'user' || m.role === 'assistant')
+            .filter(m => m.content) // Skip empty assistant placeholder
+            .map(m => ({ role: m.role, content: m.content }))
+
+          if (window.nyra?.streaming?.directStream && chatMessages.length > 0) {
+            console.log('[OpenClaw] Falling back to direct API stream (bypassing gateway)')
+            // Clear the timeout — we're retrying
+            if (streamTimeoutRef.current) { clearTimeout(streamTimeoutRef.current); streamTimeoutRef.current = null }
+
+            // Keep streamingSessionRef pointed at this session
+            streamingSessionRef.current = sessionId
+
+            window.nyra.streaming.directStream({
+              streamId: fallbackStreamId,
+              messages: chatMessages,
+              maxTokens: 4096,
+              temperature: 0.7,
+            }).then((result: any) => {
+              if (!result?.success) {
+                console.error('[OpenClaw] Direct fallback also failed:', result?.error)
+                setSessions(prev => prev.map(s => {
+                  if (s.id !== sessionId) return s
+                  const msgs = [...s.messages]
+                  const last = msgs[msgs.length - 1]
+                  if (last?.role === 'assistant' && (last.content === '' || !last.content)) {
+                    msgs[msgs.length - 1] = { ...last, content: `⚠️ ${result?.error || err.message}\n\nPlease check your API key in Settings.` }
+                  }
+                  return { ...s, messages: msgs }
+                }))
+                handleStreamDone(sessionId)
+              }
+              // If success, streaming events (stream:chunk, stream:done) will handle the rest
+            }).catch((fallbackErr: Error) => {
+              console.error('[OpenClaw] Direct fallback error:', fallbackErr)
+              setSessions(prev => prev.map(s => {
+                if (s.id !== sessionId) return s
+                const msgs = [...s.messages]
+                const last = msgs[msgs.length - 1]
+                if (last?.role === 'assistant' && (last.content === '' || !last.content)) {
+                  msgs[msgs.length - 1] = { ...last, content: `⚠️ ${fallbackErr.message}\n\nPlease check your API key in Settings.` }
+                }
+                return { ...s, messages: msgs }
+              }))
+              handleStreamDone(sessionId)
+            })
+          } else {
+            // No direct fallback available — show the original error
+            setSessions(prev => prev.map(s => {
+              if (s.id !== sessionId) return s
+              const msgs = [...s.messages]
+              const last = msgs[msgs.length - 1]
+              if (last?.role === 'assistant' && last.content === '') {
+                msgs[msgs.length - 1] = { ...last, content: `⚠️ Gateway error: ${err.message}\n\nThis usually means the session or model isn't recognized. Try starting a new chat.` }
+              }
+              return { ...s, messages: msgs }
+            }))
+            handleStreamDone(sessionId)
+          }
         },
       })
       setTimeout(() => { pendingRef.current.delete(chatId) }, 30_000)
@@ -1129,6 +1357,40 @@ export function useOpenClaw() {
       connect('onReady')
     }))
     cleanups.push(window.nyra.openclaw.onError?.((msg: string) => { setStatus('error'); setLog(msg) }))
+
+    // ── Direct stream event listeners (for gateway fallback) ─────────────
+    // When the direct API fallback fires, it uses IPC stream events instead of
+    // WebSocket. These listeners route those events into the session state.
+    if (window.nyra?.streaming) {
+      cleanups.push(window.nyra.streaming.onChunk?.((data: any) => {
+        const sid = streamingSessionRef.current
+        if (sid && data.content) {
+          handleStreamToken(sid, data.content)
+        }
+        if (data.done && sid) {
+          handleStreamDone(sid)
+        }
+      }))
+      cleanups.push(window.nyra.streaming.onDone?.((data: any) => {
+        const sid = streamingSessionRef.current
+        if (sid) handleStreamDone(sid)
+      }))
+      cleanups.push(window.nyra.streaming.onError?.((data: any) => {
+        const sid = streamingSessionRef.current
+        if (sid) {
+          setSessions(prev => prev.map(s => {
+            if (s.id !== sid) return s
+            const msgs = [...s.messages]
+            const last = msgs[msgs.length - 1]
+            if (last?.role === 'assistant' && (last.content === '' || !last.content)) {
+              msgs[msgs.length - 1] = { ...last, content: `⚠️ ${data.error}\n\nPlease check your API key in Settings.` }
+            }
+            return { ...s, messages: msgs }
+          }))
+          handleStreamDone(sid)
+        }
+      }))
+    }
 
     // NOTE: Do NOT call connect('useEffect-direct') here — we wait for the
     // gateway to report 'running' before attempting to connect. Connecting

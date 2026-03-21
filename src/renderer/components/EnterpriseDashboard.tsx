@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 
 type UserRole = 'viewer' | 'member' | 'admin' | 'owner' | 'super_admin';
 type TabType = 'users' | 'policies' | 'audit' | 'billing';
@@ -10,6 +10,13 @@ interface User {
   role: UserRole;
   status: 'active' | 'inactive' | 'suspended';
   lastLogin?: number;
+}
+
+interface Role {
+  id: string;
+  name: string;
+  permissions: string[];
+  memberCount: number;
 }
 
 interface Policy {
@@ -39,9 +46,16 @@ interface BillingData {
   };
 }
 
+interface Toast {
+  id: string;
+  message: string;
+  type: 'success' | 'error' | 'info';
+}
+
 export default function EnterpriseDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('users');
   const [users, setUsers] = useState<User[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
   const [billingData, setBillingData] = useState<BillingData>({
@@ -50,53 +64,197 @@ export default function EnterpriseDashboard() {
     usageMetrics: { apiCalls: 0, tokens: 0, storage: 0 },
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
 
-  useEffect(() => {
-    loadEnterpriseData();
-  }, [activeTab]);
+  // Policy form state
+  const [showPolicyForm, setShowPolicyForm] = useState(false);
+  const [policyForm, setPolicyForm] = useState({
+    name: '',
+    severity: 'medium' as const,
+  });
 
-  const loadEnterpriseData = async () => {
+  // Audit filter state
+  const [auditDateRange, setAuditDateRange] = useState({
+    startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    endDate: new Date().toISOString().split('T')[0],
+  });
+
+  // Billing limit input
+  const [spendingLimitInput, setSpendingLimitInput] = useState('');
+
+  const addToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    const id = Math.random().toString(36).substr(2, 9);
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 3000);
+  }, []);
+
+  const loadUsersData = useCallback(async () => {
     try {
       setIsLoading(true);
-      const data = await (window.nyra?.enterprise?.getData as any)?.(activeTab);
+      const data = await window.nyra.adminConsole.listUsers();
       if (data) {
-        switch (activeTab) {
-          case 'users':
-            setUsers(data.users || []);
-            break;
-          case 'policies':
-            setPolicies(data.policies || []);
-            break;
-          case 'audit':
-            setAuditEntries(data.entries || []);
-            break;
-          case 'billing':
-            setBillingData(data || billingData);
-            break;
-        }
+        setUsers(data.users || []);
       }
     } catch (err) {
-      console.error('Failed to load enterprise data:', err);
+      console.error('Failed to load users:', err);
+      addToast('Failed to load users', 'error');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [addToast]);
 
-  const handleRoleChange = async (userId: string, newRole: UserRole) => {
+  const loadRolesData = useCallback(async () => {
     try {
-      await (window.nyra?.enterprise?.updateUserRole as any)?.(userId, newRole);
-      setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
+      const data = await window.nyra.rbacManager.listRoles?.();
+      if (data) {
+        setRoles(data.roles || []);
+      }
     } catch (err) {
-      console.error('Failed to update user role:', err);
+      console.error('Failed to load roles:', err);
+    }
+  }, []);
+
+  const loadPoliciesData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const data = await window.nyra.policyEngine.getPolicies?.();
+      if (data) {
+        setPolicies(data.policies || []);
+      }
+    } catch (err) {
+      console.error('Failed to load policies:', err);
+      addToast('Failed to load policies', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [addToast]);
+
+  const loadAuditData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const data = await window.nyra.adminConsole.getAuditLog({
+        startDate: auditDateRange.startDate,
+        endDate: auditDateRange.endDate,
+      });
+      if (data) {
+        setAuditEntries(data.entries || []);
+      }
+    } catch (err) {
+      console.error('Failed to load audit log:', err);
+      addToast('Failed to load audit log', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [auditDateRange, addToast]);
+
+  const loadBillingData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const data = await window.nyra.adminConsole.getBillingOverview();
+      if (data) {
+        setBillingData(data);
+        setSpendingLimitInput(data.monthlyLimit.toString());
+      }
+    } catch (err) {
+      console.error('Failed to load billing data:', err);
+      addToast('Failed to load billing data', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [addToast]);
+
+  // Load data based on active tab
+  useEffect(() => {
+    switch (activeTab) {
+      case 'users':
+        loadUsersData();
+        loadRolesData();
+        break;
+      case 'policies':
+        loadPoliciesData();
+        break;
+      case 'audit':
+        loadAuditData();
+        break;
+      case 'billing':
+        loadBillingData();
+        break;
+    }
+  }, [activeTab, loadUsersData, loadRolesData, loadPoliciesData, loadAuditData, loadBillingData]);
+
+  const handleUserStatusToggle = async (userId: string, currentStatus: string) => {
+    try {
+      const newStatus = currentStatus === 'suspended' ? 'active' : 'suspended';
+      if (newStatus === 'suspended') {
+        await window.nyra.adminConsole.suspendUser(userId);
+      } else {
+        await window.nyra.adminConsole.activateUser(userId);
+      }
+      setUsers(users.map(u => u.id === userId ? { ...u, status: newStatus as any } : u));
+      addToast(`User ${newStatus === 'suspended' ? 'suspended' : 'activated'} successfully`, 'success');
+    } catch (err) {
+      console.error('Failed to update user status:', err);
+      addToast('Failed to update user status', 'error');
     }
   };
 
-  const handlePolicyToggle = async (policyId: string, enabled: boolean) => {
+  const handleAddPolicy = async () => {
     try {
-      await (window.nyra?.enterprise?.setPolicyEnabled as any)?.(policyId, !enabled);
-      setPolicies(policies.map(p => p.id === policyId ? { ...p, enabled: !enabled } : p));
+      if (!policyForm.name.trim()) {
+        addToast('Policy name is required', 'error');
+        return;
+      }
+
+      const result = await window.nyra.policyEngine.createPolicy?.(policyForm);
+      
+      setPolicies(prev => [...prev, {
+        id: result?.id || Math.random().toString(36).substr(2, 9),
+        name: policyForm.name,
+        severity: policyForm.severity,
+        enabled: true,
+        appliedCount: 0,
+      }]);
+
+      setPolicyForm({ name: '', severity: 'medium' });
+      setShowPolicyForm(false);
+      addToast(`Policy "${policyForm.name}" created successfully`, 'success');
     } catch (err) {
-      console.error('Failed to toggle policy:', err);
+      console.error('Failed to create policy:', err);
+      addToast('Failed to create policy', 'error');
+    }
+  };
+
+  const handleSetSpendingLimit = async () => {
+    try {
+      const newLimit = parseFloat(spendingLimitInput);
+      if (isNaN(newLimit) || newLimit < 0) {
+        addToast('Please enter a valid spending limit', 'error');
+        return;
+      }
+      await window.nyra.adminConsole.setSpendingLimit(newLimit);
+      setBillingData(prev => ({ ...prev, monthlyLimit: newLimit }));
+      addToast(`Spending limit set to $${newLimit.toFixed(2)}`, 'success');
+    } catch (err) {
+      console.error('Failed to set spending limit:', err);
+      addToast('Failed to set spending limit', 'error');
+    }
+  };
+
+  const handleGenerateComplianceReport = async () => {
+    try {
+      setIsLoading(true);
+      const report = await window.nyra.adminConsole.generateComplianceReport?.();
+      if (report) {
+        addToast('Compliance report generated successfully', 'success');
+        // Could open/download the report here
+      }
+    } catch (err) {
+      console.error('Failed to generate compliance report:', err);
+      addToast('Failed to generate compliance report', 'error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -121,6 +279,22 @@ export default function EnterpriseDashboard() {
 
   return (
     <div className="space-y-6 p-6 bg-nyra-surface rounded-lg h-full flex flex-col">
+      {/* Toast Notifications */}
+      <div className="fixed top-4 right-4 space-y-2 z-50 pointer-events-none">
+        {toasts.map(toast => (
+          <div
+            key={toast.id}
+            className={`px-4 py-3 rounded-lg text-sm font-semibold pointer-events-auto animate-in fade-in slide-in-from-right ${
+              toast.type === 'success' ? 'bg-sage text-[#0d0b09]' :
+              toast.type === 'error' ? 'bg-red-500 text-white' :
+              'bg-blue-500 text-white'
+            }`}
+          >
+            {toast.message}
+          </div>
+        ))}
+      </div>
+
       <div className="space-y-2">
         <h2 className="text-xl font-semibold text-gray-100">Enterprise Dashboard</h2>
         <p className="text-sm text-gray-400">Organization administration & monitoring</p>
@@ -144,58 +318,123 @@ export default function EnterpriseDashboard() {
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden flex flex-col">
         {/* Users Tab */}
         {activeTab === 'users' && (
-          <div className="space-y-3 overflow-y-auto h-full pr-2">
-            {isLoading ? (
-              <p className="text-gray-500 text-sm">Loading users...</p>
-            ) : users.length > 0 ? (
-              <div className="bg-[#1a1816] border border-gray-700 rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-[#0d0b09] border-b border-gray-700">
-                    <tr>
-                      <th className="text-left px-4 py-2 text-gray-500 font-semibold">Name</th>
-                      <th className="text-left px-4 py-2 text-gray-500 font-semibold">Email</th>
-                      <th className="text-left px-4 py-2 text-gray-500 font-semibold">Role</th>
-                      <th className="text-left px-4 py-2 text-gray-500 font-semibold">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-700">
-                    {users.map((user) => (
-                      <tr key={user.id} className="hover:bg-[#251f1b]">
-                        <td className="px-4 py-2 text-gray-200">{user.name}</td>
-                        <td className="px-4 py-2 text-gray-400 text-xs">{user.email}</td>
-                        <td className="px-4 py-2">
-                          <select
-                            value={user.role}
-                            onChange={(e) => handleRoleChange(user.id, e.target.value as UserRole)}
-                            className="bg-[#0d0b09] border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-[#D4785C]"
-                          >
-                            <option value="viewer">Viewer</option>
-                            <option value="member">Member</option>
-                            <option value="admin">Admin</option>
-                            <option value="owner">Owner</option>
-                            <option value="super_admin">Super Admin</option>
-                          </select>
-                        </td>
-                        <td className={`px-4 py-2 text-xs font-semibold ${getStatusColor(user.status)} capitalize`}>
-                          {user.status}
-                        </td>
+          <div className="space-y-4 overflow-y-auto flex-1 pr-2">
+            {/* Roles Subsection */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase">User Roles</p>
+              {roles.length > 0 ? (
+                <div className="grid grid-cols-1 gap-2">
+                  {roles.map((role) => (
+                    <div key={role.id} className="bg-[#1a1816] border border-gray-700 rounded-lg p-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-200">{role.name}</p>
+                          <p className="text-xs text-gray-500 mt-1">{role.memberCount} members</p>
+                        </div>
+                        <span className="text-xs text-[#D4785C]">{role.permissions.length} perms</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500 italic">No roles configured</p>
+              )}
+            </div>
+
+            {/* Users List */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase">Users</p>
+              {isLoading ? (
+                <p className="text-gray-500 text-sm">Loading users...</p>
+              ) : users.length > 0 ? (
+                <div className="bg-[#1a1816] border border-gray-700 rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-[#0d0b09] border-b border-gray-700 sticky top-0">
+                      <tr>
+                        <th className="text-left px-4 py-2 text-gray-500 font-semibold">Name</th>
+                        <th className="text-left px-4 py-2 text-gray-500 font-semibold">Email</th>
+                        <th className="text-left px-4 py-2 text-gray-500 font-semibold">Status</th>
+                        <th className="text-left px-4 py-2 text-gray-500 font-semibold">Action</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="text-gray-500 text-sm italic">No users found</p>
-            )}
+                    </thead>
+                    <tbody className="divide-y divide-gray-700">
+                      {users.map((user) => (
+                        <tr key={user.id} className="hover:bg-[#251f1b]">
+                          <td className="px-4 py-2 text-gray-200">{user.name}</td>
+                          <td className="px-4 py-2 text-gray-400 text-xs">{user.email}</td>
+                          <td className={`px-4 py-2 text-xs font-semibold ${getStatusColor(user.status)} capitalize`}>
+                            {user.status}
+                          </td>
+                          <td className="px-4 py-2">
+                            <button
+                              onClick={() => handleUserStatusToggle(user.id, user.status)}
+                              className={`text-xs font-semibold px-2 py-1 rounded transition-colors ${
+                                user.status === 'suspended'
+                                  ? 'bg-sage text-[#0d0b09] hover:bg-[#6ca870]'
+                                  : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                              }`}
+                            >
+                              {user.status === 'suspended' ? 'Activate' : 'Suspend'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-gray-500 text-sm italic">No users found</p>
+              )}
+            </div>
           </div>
         )}
 
         {/* Policies Tab */}
         {activeTab === 'policies' && (
-          <div className="space-y-2 overflow-y-auto h-full pr-2">
+          <div className="space-y-3 overflow-y-auto flex-1 pr-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-400 uppercase">Security Policies</p>
+              <button
+                onClick={() => setShowPolicyForm(!showPolicyForm)}
+                className="text-xs font-semibold text-[#D4785C] hover:text-[#c8653a] transition-colors"
+              >
+                {showPolicyForm ? 'Cancel' : '+ Add Policy'}
+              </button>
+            </div>
+
+            {/* Add Policy Form */}
+            {showPolicyForm && (
+              <div className="bg-[#1a1816] border border-gray-700 rounded-lg p-4 space-y-3">
+                <input
+                  type="text"
+                  placeholder="Policy name (e.g., Data Encryption)"
+                  value={policyForm.name}
+                  onChange={(e) => setPolicyForm(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full bg-[#0d0b09] border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-[#D4785C]"
+                />
+                <select
+                  value={policyForm.severity}
+                  onChange={(e) => setPolicyForm(prev => ({ ...prev, severity: e.target.value as any }))}
+                  className="w-full bg-[#0d0b09] border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-[#D4785C]"
+                >
+                  <option value="low">Low Severity</option>
+                  <option value="medium">Medium Severity</option>
+                  <option value="high">High Severity</option>
+                  <option value="critical">Critical Severity</option>
+                </select>
+                <button
+                  onClick={handleAddPolicy}
+                  className="w-full bg-[#D4785C] hover:bg-[#c8653a] text-white font-semibold py-2 rounded-lg transition-colors text-sm"
+                >
+                  Create Policy
+                </button>
+              </div>
+            )}
+
+            {/* Policies List */}
             {isLoading ? (
               <p className="text-gray-500 text-sm">Loading policies...</p>
             ) : policies.length > 0 ? (
@@ -211,7 +450,6 @@ export default function EnterpriseDashboard() {
                     <p className="text-xs text-gray-500 mt-1">Applied to {policy.appliedCount} targets</p>
                   </div>
                   <button
-                    onClick={() => handlePolicyToggle(policy.id, policy.enabled)}
                     className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${
                       policy.enabled
                         ? 'bg-sage text-[#0d0b09] hover:bg-[#6ca870]'
@@ -230,13 +468,36 @@ export default function EnterpriseDashboard() {
 
         {/* Audit Tab */}
         {activeTab === 'audit' && (
-          <div className="overflow-y-auto h-full pr-2">
+          <div className="space-y-3 overflow-y-auto flex-1 pr-2">
+            {/* Date Range Filter */}
+            <div className="flex gap-2">
+              <input
+                type="date"
+                value={auditDateRange.startDate}
+                onChange={(e) => setAuditDateRange(prev => ({ ...prev, startDate: e.target.value }))}
+                className="flex-1 bg-[#1a1816] border border-gray-700 rounded px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-[#D4785C]"
+              />
+              <input
+                type="date"
+                value={auditDateRange.endDate}
+                onChange={(e) => setAuditDateRange(prev => ({ ...prev, endDate: e.target.value }))}
+                className="flex-1 bg-[#1a1816] border border-gray-700 rounded px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-[#D4785C]"
+              />
+              <button
+                onClick={loadAuditData}
+                className="bg-[#C9A87C] hover:bg-[#b89668] text-[#0d0b09] font-semibold px-3 py-2 rounded text-xs transition-colors"
+              >
+                Filter
+              </button>
+            </div>
+
+            {/* Audit Log Table */}
             {isLoading ? (
               <p className="text-gray-500 text-sm">Loading audit log...</p>
             ) : auditEntries.length > 0 ? (
               <div className="bg-[#1a1816] border border-gray-700 rounded-lg overflow-hidden">
                 <table className="w-full text-xs">
-                  <thead className="bg-[#0d0b09] border-b border-gray-700">
+                  <thead className="bg-[#0d0b09] border-b border-gray-700 sticky top-0">
                     <tr>
                       <th className="text-left px-3 py-2 text-gray-500 font-semibold">Time</th>
                       <th className="text-left px-3 py-2 text-gray-500 font-semibold">Actor</th>
@@ -259,18 +520,19 @@ export default function EnterpriseDashboard() {
                 </table>
               </div>
             ) : (
-              <p className="text-gray-500 text-sm italic">No audit entries found</p>
+              <p className="text-gray-500 text-sm italic">No audit entries found for the selected date range</p>
             )}
           </div>
         )}
 
         {/* Billing Tab */}
         {activeTab === 'billing' && (
-          <div className="space-y-4 overflow-y-auto h-full pr-2">
+          <div className="space-y-4 overflow-y-auto flex-1 pr-2">
             {isLoading ? (
               <p className="text-gray-500 text-sm">Loading billing data...</p>
             ) : (
               <>
+                {/* Cost Cards */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-[#1a1816] border border-gray-700 rounded-lg p-4">
                     <p className="text-xs text-gray-500 uppercase font-semibold">Current Cost</p>
@@ -287,6 +549,27 @@ export default function EnterpriseDashboard() {
                   </div>
                 </div>
 
+                {/* Spending Limit */}
+                <div className="bg-[#1a1816] border border-gray-700 rounded-lg p-4 space-y-3">
+                  <p className="text-xs font-semibold text-gray-400 uppercase">Monthly Spending Limit</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      value={spendingLimitInput}
+                      onChange={(e) => setSpendingLimitInput(e.target.value)}
+                      placeholder="Monthly limit"
+                      className="flex-1 bg-[#0d0b09] border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-[#D4785C]"
+                    />
+                    <button
+                      onClick={handleSetSpendingLimit}
+                      className="bg-[#D4785C] hover:bg-[#c8653a] text-white font-semibold px-4 py-2 rounded text-sm transition-colors"
+                    >
+                      Set
+                    </button>
+                  </div>
+                </div>
+
+                {/* Usage Metrics */}
                 <div className="bg-[#1a1816] border border-gray-700 rounded-lg p-4 space-y-3">
                   <p className="text-xs font-semibold text-gray-400 uppercase">Usage Metrics</p>
                   <div className="space-y-2">
@@ -310,6 +593,15 @@ export default function EnterpriseDashboard() {
                     </div>
                   </div>
                 </div>
+
+                {/* Compliance Report */}
+                <button
+                  onClick={handleGenerateComplianceReport}
+                  disabled={isLoading}
+                  className="w-full bg-[#C9A87C] hover:bg-[#b89668] disabled:opacity-50 text-[#0d0b09] font-semibold py-2 rounded-lg transition-colors"
+                >
+                  {isLoading ? 'Generating...' : 'Generate Compliance Report'}
+                </button>
               </>
             )}
           </div>

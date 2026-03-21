@@ -84,12 +84,18 @@ import AccessibilityPanel      from './components/AccessibilityPanel'
 import BuildValidatorPanel     from './components/BuildValidatorPanel'
 import CodeBenchmarkPanel      from './components/CodeBenchmarkPanel'
 import WebSearchPanel          from './components/WebSearchPanel'
+import ModelRouterPanel        from './components/ModelRouterPanel'
+import EnterpriseDashboard     from './components/EnterpriseDashboard'
+import VoiceEnginePanel        from './components/VoiceEnginePanel'
+import PluginSandboxPanel      from './components/PluginSandboxPanel'
+import AgentNetworkPanel       from './components/AgentNetworkPanel'
+import I18nSettingsPanel       from './components/I18nSettingsPanel'
 import type { Project }        from '../preload/index'
 import type { ChatMessage }    from './hooks/useOpenClaw'
 
 // ── Panel state ────────────────────────────────────────────────────────────────
 type AppMode = 'chat' | 'cowork'
-type Panel = 'none' | 'settings' | 'scheduled' | 'computer-use' | 'agent-pipeline' | 'memory-inspector' | 'workflow-recipes' | 'agent-studio' | 'stream-chat' | 'collab-timeline' | 'provider-dashboard' | 'knowledge-graph' | 'conv-tree' | 'agent-analytics' | 'notification-center' | 'codebase-explorer' | 'context-visualizer' | 'plugin-studio' | 'prompt-library-v2' | 'task-board' | 'api-playground' | 'perf-profiler' | 'voice-interface' | 'file-attachment' | 'diff-viewer' | 'ab-testing' | 'theme-editor' | 'global-search' | 'activity-feed' | 'workspace-export' | 'report-gen' | 'webhook-mgr' | 'backup-mgr' | 'session-sharing' | 'error-boundary' | 'offline-mgr' | 'startup-profiler' | 'accessibility' | 'build-validator' | 'code-benchmark' | 'web-search'
+type Panel = 'none' | 'settings' | 'scheduled' | 'computer-use' | 'agent-pipeline' | 'memory-inspector' | 'workflow-recipes' | 'agent-studio' | 'stream-chat' | 'collab-timeline' | 'provider-dashboard' | 'knowledge-graph' | 'conv-tree' | 'agent-analytics' | 'notification-center' | 'codebase-explorer' | 'context-visualizer' | 'plugin-studio' | 'prompt-library-v2' | 'task-board' | 'api-playground' | 'perf-profiler' | 'voice-interface' | 'file-attachment' | 'diff-viewer' | 'ab-testing' | 'theme-editor' | 'global-search' | 'activity-feed' | 'workspace-export' | 'report-gen' | 'webhook-mgr' | 'backup-mgr' | 'session-sharing' | 'error-boundary' | 'offline-mgr' | 'startup-profiler' | 'accessibility' | 'build-validator' | 'code-benchmark' | 'web-search' | 'model-router' | 'enterprise-dash' | 'voice-engine' | 'plugin-sandbox' | 'agent-network' | 'i18n-settings'
 type Modal = 'none' | 'prompts' | 'export' | 'voice' | 'createProject' | 'commandPalette' | 'modelCompare' | 'mcpBrowser'
 
 // ── Session color map ──────────────────────────────────────────────────────────
@@ -941,6 +947,51 @@ export const App: React.FC = () => {
                 </div>
               )}
             </div>
+
+            {/* Platform Group (Year 1-5 Services) */}
+            <div>
+              <button
+                onClick={() => toggleGroup('platform')}
+                className="w-full flex items-center gap-1 px-2 py-1.5 text-[9px] uppercase tracking-wider text-white/25 hover:text-white/40 transition-colors"
+              >
+                <ChevronDown size={9} style={{
+                  transform: expandedGroups.has('platform') ? 'rotate(0deg)' : 'rotate(-90deg)',
+                  transition: 'transform 150ms ease-out'
+                }} />
+                <span className="flex-1">Platform</span>
+                <span className="text-[8px] bg-white/10 px-1.5 rounded">
+                  {Array.from(['model-router', 'enterprise-dash', 'voice-engine', 'plugin-sandbox', 'agent-network', 'i18n-settings'] as const).filter(p => panel === p).length}
+                </span>
+              </button>
+              {expandedGroups.has('platform') && (
+                <div className="flex flex-wrap gap-1 px-2 py-1">
+                  <button onClick={() => setPanel(p => p === 'model-router' ? 'none' : 'model-router')} title="Model Router"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'model-router' ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Layers size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'enterprise-dash' ? 'none' : 'enterprise-dash')} title="Enterprise Dashboard"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'enterprise-dash' ? 'text-gold-300 bg-gold-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Users size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'voice-engine' ? 'none' : 'voice-engine')} title="Voice Engine"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'voice-engine' ? 'text-sage-300 bg-sage-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Mic size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'plugin-sandbox' ? 'none' : 'plugin-sandbox')} title="Plugin Sandbox"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'plugin-sandbox' ? 'text-gold-300 bg-gold-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Package size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'agent-network' ? 'none' : 'agent-network')} title="Agent Network"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'agent-network' ? 'text-terra-300 bg-terra-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Trophy size={13} />
+                  </button>
+                  <button onClick={() => setPanel(p => p === 'i18n-settings' ? 'none' : 'i18n-settings')} title="Language & i18n"
+                    className={`p-1.5 rounded-lg transition-colors ${panel === 'i18n-settings' ? 'text-sage-300 bg-sage-400/10' : 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'}`}>
+                    <Globe size={13} />
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </aside>
       </div>
@@ -1473,6 +1524,97 @@ export const App: React.FC = () => {
       {/* ── Web Search panel ─────────────────────────────────────────────── */}
       {panel === 'web-search' && (
         <WebSearchPanel onClose={() => setPanel('none')} />
+      )}
+
+      {/* ── Year 1-5 Platform panels ─────────────────────────────────────── */}
+      {panel === 'model-router' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[480px] h-[700px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.06]">
+              <span className="text-sm font-semibold text-white/80">Model Router</span>
+              <button onClick={() => setPanel('none')} className="text-white/30 hover:text-white/60 text-lg leading-none">&times;</button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <ModelRouterPanel />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {panel === 'enterprise-dash' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[600px] h-[720px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.06]">
+              <span className="text-sm font-semibold text-white/80">Enterprise Dashboard</span>
+              <button onClick={() => setPanel('none')} className="text-white/30 hover:text-white/60 text-lg leading-none">&times;</button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <EnterpriseDashboard />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {panel === 'voice-engine' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[440px] h-[660px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.06]">
+              <span className="text-sm font-semibold text-white/80">Voice Engine</span>
+              <button onClick={() => setPanel('none')} className="text-white/30 hover:text-white/60 text-lg leading-none">&times;</button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <VoiceEnginePanel />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {panel === 'plugin-sandbox' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[520px] h-[700px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.06]">
+              <span className="text-sm font-semibold text-white/80">Plugin Sandbox</span>
+              <button onClick={() => setPanel('none')} className="text-white/30 hover:text-white/60 text-lg leading-none">&times;</button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <PluginSandboxPanel />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {panel === 'agent-network' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[500px] h-[720px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.06]">
+              <span className="text-sm font-semibold text-white/80">Agent Network</span>
+              <button onClick={() => setPanel('none')} className="text-white/30 hover:text-white/60 text-lg leading-none">&times;</button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <AgentNetworkPanel />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {panel === 'i18n-settings' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={(e) => { if (e.target === e.currentTarget) setPanel('none') }}>
+          <div className="w-[460px] h-[680px] bg-nyra-surface rounded-2xl border border-nyra-border shadow-2xl flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.06]">
+              <span className="text-sm font-semibold text-white/80">Language & i18n</span>
+              <button onClick={() => setPanel('none')} className="text-white/30 hover:text-white/60 text-lg leading-none">&times;</button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <I18nSettingsPanel />
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Command palette ───────────────────────────────────────────────── */}

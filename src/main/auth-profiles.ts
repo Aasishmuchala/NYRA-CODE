@@ -128,8 +128,129 @@ const DEVICES_DIR   = path.join(OPENCLAW_HOME, 'devices')
 const PAIRED_JSON   = path.join(DEVICES_DIR, 'paired.json')
 const PENDING_JSON  = path.join(DEVICES_DIR, 'pending.json')
 
+const MODELS_JSON   = path.join(AGENT_DIR, 'models.json')
+
 export function getAuthProfilesPath(): string {
   return AUTH_PROFILES
+}
+
+// ── Models.json — provider endpoint configuration for the gateway ────────────
+
+/**
+ * Provider endpoint definitions for models.json.
+ * Each entry tells the OpenClaw gateway how to reach a provider's API.
+ * The gateway reads this at startup and on config reload.
+ *
+ * Key fields per provider:
+ *   baseUrl  — API endpoint (e.g. https://openrouter.ai/api/v1)
+ *   apiKey   — ${ENV_VAR} reference → resolved from process.env at spawn
+ *   api      — protocol: "openai-completions" | "openai-responses" | "anthropic"
+ *   models   — array of { id, name?, contextWindow?, reasoning? }
+ */
+const PROVIDER_ENDPOINTS: Record<string, {
+  baseUrl: string
+  apiKeyEnv: string
+  api: string
+  models: Array<{ id: string; name?: string }>
+}> = {
+  'openrouter': {
+    baseUrl: 'https://openrouter.ai/api/v1',
+    apiKeyEnv: 'OPENROUTER_API_KEY',
+    api: 'openai-completions',
+    models: [
+      { id: 'anthropic/claude-sonnet-4' },
+      { id: 'anthropic/claude-opus-4' },
+      { id: 'openai/gpt-4o' },
+      { id: 'openai/gpt-4.1' },
+      { id: 'google/gemini-2.5-pro' },
+      { id: 'deepseek/deepseek-r1' },
+      { id: 'meta-llama/llama-4-maverick' },
+    ],
+  },
+  'openai-codex': {
+    baseUrl: 'https://api.openai.com/v1',
+    apiKeyEnv: 'OPENAI_API_KEY',
+    api: 'openai-completions',
+    models: [
+      { id: 'gpt-5.4' },
+      { id: 'gpt-4o' },
+      { id: 'gpt-4.1' },
+      { id: 'o4-mini' },
+      { id: 'o3-mini' },
+    ],
+  },
+  'anthropic': {
+    baseUrl: 'https://api.anthropic.com',
+    apiKeyEnv: 'ANTHROPIC_API_KEY',
+    api: 'anthropic',
+    models: [
+      { id: 'claude-opus-4-6' },
+      { id: 'claude-sonnet-4-6' },
+      { id: 'claude-haiku-4-5' },
+    ],
+  },
+  'google-gemini': {
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    apiKeyEnv: 'GOOGLE_API_KEY',
+    api: 'openai-completions',
+    models: [
+      { id: 'gemini-2.5-pro' },
+      { id: 'gemini-2.5-flash' },
+    ],
+  },
+}
+
+/**
+ * Write models.json for the gateway agent.
+ * Called on startup and whenever a provider key is saved/removed.
+ * Only includes providers that have API keys stored.
+ *
+ * @param hasKey — function that checks if a Nyra provider has a saved key
+ */
+export function ensureModelsJson(
+  hasKey: (nyraProviderId: string) => boolean
+): void {
+  // Map Nyra provider IDs → OpenClaw provider IDs
+  const nyraToOpenClaw: Record<string, string> = {
+    'openrouter': 'openrouter',
+    'openai': 'openai-codex',
+    'anthropic': 'anthropic',
+    'gemini': 'google-gemini',
+  }
+
+  const providers: Record<string, unknown> = {}
+  let firstProvider: string | null = null
+
+  for (const [nyraId, openclawId] of Object.entries(nyraToOpenClaw)) {
+    if (hasKey(nyraId)) {
+      const ep = PROVIDER_ENDPOINTS[openclawId]
+      if (ep) {
+        providers[openclawId] = {
+          baseUrl: ep.baseUrl,
+          apiKey: `\${${ep.apiKeyEnv}}`,
+          api: ep.api,
+          models: ep.models,
+        }
+        if (!firstProvider) firstProvider = openclawId
+      }
+    }
+  }
+
+  if (Object.keys(providers).length === 0) {
+    console.log('[AuthProfiles] No provider keys found — skipping models.json')
+    return
+  }
+
+  const modelsJson = {
+    models: {
+      mode: 'merge',
+      providers,
+    },
+  }
+
+  fs.mkdirSync(AGENT_DIR, { recursive: true })
+  fs.writeFileSync(MODELS_JSON, JSON.stringify(modelsJson, null, 2), { encoding: 'utf8', mode: 0o600 })
+  console.log(`[AuthProfiles] Written models.json with ${Object.keys(providers).length} provider(s):`, Object.keys(providers).join(', '))
 }
 
 // ── Read / Write ─────────────────────────────────────────────────────────────
@@ -255,6 +376,14 @@ export function syncAllProviders(
   if (changed) {
     writeAuthProfiles(profiles)
   }
+
+  // Also regenerate models.json so the gateway knows about provider endpoints
+  ensureModelsJson((nyraId) => !!loadKey(nyraId))
+
+  // Write provider endpoints into openclaw.json (the gateway's main config)
+  // This tells the gateway the base URL, API protocol, and model catalog for each provider
+  const activeModelForDefault = getActiveModel('openrouter') || getActiveModel('openai') || getActiveModel('anthropic') || getActiveModel('gemini')
+  ensureProviderEndpoints((nyraId) => !!loadKey(nyraId), activeModelForDefault)
 }
 
 /**
@@ -448,6 +577,89 @@ export function ensureOpenClawJsonOrigins(): void {
     }
   } catch (err) {
     console.warn('[AuthProfiles] Could not update openclaw.json:', err)
+  }
+}
+
+/**
+ * Write model provider configuration into openclaw.json so the gateway
+ * knows how to reach each provider's API endpoint.
+ *
+ * Also sets the agent default model to match the active provider.
+ *
+ * @param hasKey — checks if a Nyra provider has a saved key
+ * @param activeModel — the currently selected model ID (e.g. "openrouter/anthropic/claude-sonnet-4")
+ */
+export function ensureProviderEndpoints(
+  hasKey: (nyraProviderId: string) => boolean,
+  activeModel?: string
+): void {
+  const cfgPath = path.join(OPENCLAW_HOME, 'openclaw.json')
+  try {
+    let cfg: Record<string, any> = {}
+    if (fs.existsSync(cfgPath)) {
+      cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'))
+    }
+
+    // Build providers map from saved keys
+    const nyraToOpenClaw: Record<string, string> = {
+      'openrouter': 'openrouter',
+      'openai': 'openai-codex',
+      'anthropic': 'anthropic',
+      'gemini': 'google-gemini',
+    }
+
+    const providers: Record<string, any> = {}
+    let firstProviderModel: string | null = null
+
+    for (const [nyraId, openclawId] of Object.entries(nyraToOpenClaw)) {
+      if (hasKey(nyraId)) {
+        const ep = PROVIDER_ENDPOINTS[openclawId]
+        if (ep) {
+          providers[openclawId] = {
+            baseUrl: ep.baseUrl,
+            apiKey: `\${${ep.apiKeyEnv}}`,
+            api: ep.api,
+            models: ep.models,
+          }
+          // Track first available model for default
+          if (!firstProviderModel && ep.models.length > 0) {
+            firstProviderModel = `${openclawId}/${ep.models[0].id}`
+          }
+        }
+      }
+    }
+
+    if (Object.keys(providers).length === 0) {
+      console.log('[AuthProfiles] No provider keys — skipping provider endpoint config')
+      return
+    }
+
+    // Write models.providers section
+    if (!cfg.models) cfg.models = {}
+    cfg.models.mode = 'merge'
+    cfg.models.providers = providers
+
+    // Set agent default model
+    const defaultModel = activeModel || firstProviderModel
+    if (defaultModel) {
+      if (!cfg.agents) cfg.agents = {}
+      if (!cfg.agents.defaults) cfg.agents.defaults = {}
+      if (!cfg.agents.defaults.model) cfg.agents.defaults.model = {}
+      cfg.agents.defaults.model.primary = defaultModel
+      console.log(`[AuthProfiles] Set agent default model: ${defaultModel}`)
+    }
+
+    // Write env section so gateway can resolve ${ENV_VAR} references
+    if (!cfg.env) cfg.env = {}
+    if (hasKey('openrouter'))  cfg.env.OPENROUTER_API_KEY = '${OPENROUTER_API_KEY}'
+    if (hasKey('openai'))      cfg.env.OPENAI_API_KEY = '${OPENAI_API_KEY}'
+    if (hasKey('anthropic'))   cfg.env.ANTHROPIC_API_KEY = '${ANTHROPIC_API_KEY}'
+    if (hasKey('gemini'))      cfg.env.GOOGLE_API_KEY = '${GOOGLE_API_KEY}'
+
+    fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + '\n', 'utf8')
+    console.log(`[AuthProfiles] Updated openclaw.json with ${Object.keys(providers).length} provider endpoint(s)`)
+  } catch (err) {
+    console.warn('[AuthProfiles] Could not update provider endpoints in openclaw.json:', err)
   }
 }
 

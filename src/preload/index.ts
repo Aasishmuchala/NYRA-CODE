@@ -897,6 +897,13 @@ const nyraApi = {
       temperature?: number
     }): Promise<any> => ipcRenderer.invoke('stream:start', opts),
     cancel: (streamId: string): Promise<any> => ipcRenderer.invoke('stream:cancel', streamId),
+    /** Direct API fallback — bypasses gateway, uses saved keys directly */
+    directStream: (opts: {
+      streamId: string
+      messages: Array<{ role: string; content: any }>
+      maxTokens?: number
+      temperature?: number
+    }): Promise<any> => ipcRenderer.invoke('chat:direct-stream', opts),
     onStarted: (cb: (data: { streamId: string }) => void) => {
       const handler = (_: unknown, d: any) => cb(d)
       ipcRenderer.on('stream:started', handler)

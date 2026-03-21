@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NYRA Desktop — Competitive Battlecard Q1 2026</title>
+<style>
+  :root {
+    --bg-primary: #0d0b09;
+    --bg-elevated: #141210;
+    --bg-surface: #1a1816;
+    --bg-hover: #221f1c;
+    --bg-active: #2a2622;
+    --text-primary: #e8e0d6;
+    --text-secondary: rgba(232,224,214,0.7);
+    --text-muted: rgba(232,224,214,0.4);
+    --terra: #D4785C;
+    --terra-dim: rgba(212,120,92,0.15);
+    --gold: #C9A87C;
+    --gold-dim: rgba(201,168,124,0.15);
+    --sage: #7DB886;
+    --sage-dim: rgba(125,184,134,0.15);
+    --blush: #CF6D6D;
+    --blush-dim: rgba(207,109,109,0.15);
+    --border: rgba(232,224,214,0.07);
+    --border-hover: rgba(232,224,214,0.12);
+    --radius: 12px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+  .container { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+
+  /* Header */
+  header {
+    text-align: center;
+    padding: 48px 0 40px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 32px;
+  }
+  header .logo { font-size: 13px; letter-spacing: 4px; color: var(--terra); text-transform: uppercase; font-weight: 600; margin-bottom: 8px; }
+  header h1 { font-size: 28px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; }
+  header .meta { font-size: 13px; color: var(--text-muted); }
+  header .meta span { color: var(--text-secondary); }
+
+  /* Tab Navigation */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    background: var(--bg-elevated);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    margin-bottom: 28px;
+    overflow-x: auto;
+  }
+  .tab {
+    flex: 1;
+    padding: 10px 16px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .tab:hover { color: var(--text-secondary); background: var(--bg-hover); }
+  .tab.active { color: var(--terra); background: var(--terra-dim); font-weight: 600; }
+
+  /* Tab content */
+  .tab-content { display: none; animation: fadeIn 0.25s ease; }
+  .tab-content.active { display: block; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+
+  /* Comparison Matrix */
+  .matrix-table { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .matrix-table thead th {
+    background: var(--bg-elevated);
+    padding: 14px 16px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .matrix-table thead th:first-child { color: var(--text-secondary); }
+  .matrix-table thead th.nyra-col { color: var(--terra); }
+  .matrix-table tbody td {
+    padding: 12px 16px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  .matrix-table tbody tr:last-child td { border-bottom: none; }
+  .matrix-table tbody td:first-child { font-weight: 500; color: var(--text-primary); font-size: 12px; }
+  .matrix-table tbody tr:hover td { background: var(--bg-hover); }
+
+  .win { color: var(--sage); font-weight: 500; }
+  .lose { color: var(--blush); }
+  .tie { color: var(--gold); }
+  .neutral { color: var(--text-muted); }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .badge-win { background: var(--sage-dim); color: var(--sage); }
+  .badge-lose { background: var(--blush-dim); color: var(--blush); }
+  .badge-tie { background: var(--gold-dim); color: var(--gold); }
+
+  /* Battlecard */
+  .battlecard { display: flex; flex-direction: column; gap: 20px; }
+  .card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .card-header h3 { font-size: 14px; font-weight: 600; }
+  .card-header .card-icon { font-size: 16px; }
+  .card-body { padding: 16px 20px; }
+  .card-body p { font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; }
+  .card-body p:last-child { margin-bottom: 0; }
+
+  /* Profile card */
+  .profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .profile-item { }
+  .profile-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 2px; }
+  .profile-value { font-size: 13px; color: var(--text-secondary); }
+
+  /* Win/Lose sections */
+  .wl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .wl-section h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .wl-section.where-we-win h4 { color: var(--sage); }
+  .wl-section.where-they-win h4 { color: var(--blush); }
+  .wl-item { margin-bottom: 12px; }
+  .wl-item strong { font-size: 12px; color: var(--text-primary); display: block; margin-bottom: 2px; }
+  .wl-item p { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+
+  /* Talk tracks */
+  .talk-track { background: var(--bg-surface); border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; border-left: 3px solid var(--terra); }
+  .talk-track:last-child { margin-bottom: 0; }
+  .talk-track .scenario { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--terra); margin-bottom: 6px; }
+  .talk-track p { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+
+  /* Landmines */
+  .landmine { background: var(--bg-surface); border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 10px; }
+  .landmine:last-child { margin-bottom: 0; }
+  .landmine .q-icon { color: var(--gold); font-size: 16px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+  .landmine p { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+
+  /* Pricing */
+  .pricing-table { width: 100%; }
+  .pricing-table td { padding: 8px 0; font-size: 13px; color: var(--text-secondary); border-bottom: 1px solid var(--border); }
+  .pricing-table td:first-child { font-weight: 500; color: var(--text-primary); width: 160px; }
+
+  /* Recent releases */
+  .release { display: flex; gap: 12px; margin-bottom: 12px; align-items: flex-start; }
+  .release:last-child { margin-bottom: 0; }
+  .release-date { font-size: 10px; color: var(--text-muted); min-width: 70px; padding-top: 2px; }
+  .release-text { font-size: 12px; color: var(--text-secondary); }
+  .release-text strong { color: var(--text-primary); }
+
+  /* Win/loss quick guide */
+  .quick-guide { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 24px; }
+  .guide-card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+  .guide-card h4 { font-size: 13px; font-weight: 600; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .guide-item { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; display: flex; gap: 6px; }
+  .guide-item .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 6px; }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .tabs { flex-wrap: wrap; }
+    .tab { flex: none; }
+    .wl-grid, .profile-grid, .quick-guide { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <div class="logo">NYRA Desktop</div>
+  <h1>Competitive Battlecard</h1>
+  <div class="meta">Generated: <span>March 2026</span> &nbsp;|&nbsp; vs. <span>Claude Cowork</span>, <span>OpenAI Codex</span>, <span>Perplexity Computer</span></div>
+</header>
+
+<!-- Tab Navigation -->
+<nav class="tabs" role="tablist">
+  <button class="tab active" data-tab="matrix" role="tab" aria-selected="true">Comparison Matrix</button>
+  <button class="tab" data-tab="cowork" role="tab">Claude Cowork</button>
+  <button class="tab" data-tab="codex" role="tab">OpenAI Codex</button>
+  <button class="tab" data-tab="perplexity" role="tab">Perplexity Computer</button>
+  <button class="tab" data-tab="nyra" role="tab">NYRA Strengths</button>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- COMPARISON MATRIX TAB -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section id="matrix" class="tab-content active">
+
+  <table class="matrix-table">
+    <thead>
+      <tr>
+        <th style="width:22%">Capability</th>
+        <th class="nyra-col" style="width:19.5%">NYRA Desktop</th>
+        <th style="width:19.5%">Claude Cowork</th>
+        <th style="width:19.5%">OpenAI Codex</th>
+        <th style="width:19.5%">Perplexity Computer</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Positioning</td>
+        <td class="win">Multi-provider AI desktop OS</td>
+        <td>Anthropic's desktop agent for knowledge work</td>
+        <td>Developer coding agent (CLI + cloud)</td>
+        <td>Cloud AI agent with local file access</td>
+      </tr>
+      <tr>
+        <td>Model Support</td>
+        <td class="win">Claude, GPT, Ollama, custom providers</td>
+        <td class="lose">Claude models only</td>
+        <td class="lose">GPT models only</td>
+        <td class="lose">Perplexity models only</td>
+      </tr>
+      <tr>
+        <td>Runs Locally</td>
+        <td class="win">Fully local (Electron + SQLite)</td>
+        <td class="tie">Local VM sandbox</td>
+        <td class="tie">CLI local + cloud tasks</td>
+        <td class="lose">Cloud agent, local file bridge</td>
+      </tr>
+      <tr>
+        <td>Offline Support</td>
+        <td class="win">Yes — offline queue + local Ollama</td>
+        <td class="lose">No</td>
+        <td class="lose">No (local CLI needs API)</td>
+        <td class="lose">No (fully cloud-dependent)</td>
+      </tr>
+      <tr>
+        <td>Platforms</td>
+        <td class="win">macOS, Windows, Linux</td>
+        <td class="tie">macOS, Windows</td>
+        <td class="tie">macOS, Windows, Linux (CLI)</td>
+        <td class="lose">macOS only</td>
+      </tr>
+      <tr>
+        <td>Built-in Tools</td>
+        <td class="win">40+ panels (Git, Terminal, Task Board, Diff Viewer, A/B Testing, etc.)</td>
+        <td class="lose">File ops + plugins</td>
+        <td class="lose">Code editing + shell</td>
+        <td class="tie">Search + file ops + web</td>
+      </tr>
+      <tr>
+        <td>Plugin Ecosystem</td>
+        <td class="win">Plugin Studio + MCP + Skills + Marketplace</td>
+        <td class="win">MCP connectors + plugin marketplace</td>
+        <td class="tie">MCP support + extensions</td>
+        <td class="lose">App connectors (enterprise only)</td>
+      </tr>
+      <tr>
+        <td>Code Intelligence</td>
+        <td class="win">Codebase Explorer, Diff Viewer, Build Validator, Git Panel</td>
+        <td class="lose">Basic file editing</td>
+        <td class="win">Purpose-built for code — benchmarks, multi-agent</td>
+        <td class="lose">Not code-focused</td>
+      </tr>
+      <tr>
+        <td>Memory System</td>
+        <td class="win">5-tier memory (working → archival) + Knowledge Graph</td>
+        <td class="lose">No cross-session memory</td>
+        <td class="tie">AGENTS.md context files</td>
+        <td class="tie">Persistent sessions on Personal Computer</td>
+      </tr>
+      <tr>
+        <td>Cowork / Agent Mode</td>
+        <td class="win">Full Cowork UI + Agent Pipeline + Studio + Analytics</td>
+        <td class="win">Native Cowork with sub-agents</td>
+        <td class="tie">Multi-agent (experimental)</td>
+        <td class="tie">Long-running workflows</td>
+      </tr>
+      <tr>
+        <td>Scheduling</td>
+        <td class="win">Built-in scheduled tasks with cron</td>
+        <td class="tie">Supported</td>
+        <td class="lose">No</td>
+        <td class="win">24/7 proactive via Mac mini</td>
+      </tr>
+      <tr>
+        <td>Web Search</td>
+        <td class="tie">Via MCP / browser tools</td>
+        <td class="tie">Via MCP connectors</td>
+        <td class="tie">Built-in web search</td>
+        <td class="win">Core strength — best-in-class search</td>
+      </tr>
+      <tr>
+        <td>Data Privacy</td>
+        <td class="win">Self-hosted, local SQLite, no cloud dependency</td>
+        <td class="tie">Local VM with audit trail</td>
+        <td class="tie">Local CLI, cloud for async tasks</td>
+        <td class="lose">Cloud-processed, limited transparency</td>
+      </tr>
+      <tr>
+        <td>Entry Price</td>
+        <td class="win">Free (self-hosted, BYO API keys)</td>
+        <td class="tie">$20/mo (Pro plan)</td>
+        <td class="tie">$20/mo (Plus plan)</td>
+        <td class="lose">$200/mo (Max plan only)</td>
+      </tr>
+      <tr>
+        <td>Target User</td>
+        <td>Power users, developers, teams wanting control</td>
+        <td>Knowledge workers, PMs, analysts</td>
+        <td>Software developers</td>
+        <td>Executives, enterprise analysts</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- Quick Win/Loss Guide -->
+  <div class="quick-guide">
+    <div class="guide-card">
+      <h4 style="color:var(--terra)">vs. Claude Cowork</h4>
+      <div class="guide-item"><div class="dot" style="background:var(--sage)"></div><strong style="color:var(--sage);margin-right:4px">Win:</strong> Multi-model, offline, 40+ tools, memory, dev tools</div>
+      <div class="guide-item"><div class="dot" style="background:var(--blush)"></div><strong style="color:var(--blush);margin-right:4px">Lose:</strong> Brand trust, enterprise connectors, polished onboarding</div>
+      <div class="guide-item"><div class="dot" style="background:var(--gold)"></div><strong style="color:var(--gold);margin-right:4px">Tie:</strong> Plugin ecosystem, file access, cowork mode</div>
+    </div>
+    <div class="guide-card">
+      <h4 style="color:var(--terra)">vs. OpenAI Codex</h4>
+      <div class="guide-item"><div class="dot" style="background:var(--sage)"></div><strong style="color:var(--sage);margin-right:4px">Win:</strong> Full desktop OS, multi-model, rich GUI, non-dev tasks</div>
+      <div class="guide-item"><div class="dot" style="background:var(--blush)"></div><strong style="color:var(--blush);margin-right:4px">Lose:</strong> Cloud async tasks, code benchmarks, IDE ecosystem</div>
+      <div class="guide-item"><div class="dot" style="background:var(--gold)"></div><strong style="color:var(--gold);margin-right:4px">Tie:</strong> MCP support, Git integration, terminal access</div>
+    </div>
+    <div class="guide-card">
+      <h4 style="color:var(--terra)">vs. Perplexity Computer</h4>
+      <div class="guide-item"><div class="dot" style="background:var(--sage)"></div><strong style="color:var(--sage);margin-right:4px">Win:</strong> Free, runs anywhere, no Mac mini needed, dev tools, privacy</div>
+      <div class="guide-item"><div class="dot" style="background:var(--blush)"></div><strong style="color:var(--blush);margin-right:4px">Lose:</strong> Web search quality, 24/7 always-on proactive mode</div>
+      <div class="guide-item"><div class="dot" style="background:var(--gold)"></div><strong style="color:var(--gold);margin-right:4px">Tie:</strong> Enterprise connectors, long-running workflows</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- CLAUDE COWORK TAB -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section id="cowork" class="tab-content">
+  <div class="battlecard">
+
+    <!-- Profile -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-icon">🟠</span>
+        <h3>Claude Cowork — Company Profile</h3>
+      </div>
+      <div class="card-body">
+        <div class="profile-grid">
+          <div class="profile-item"><div class="profile-label">Company</div><div class="profile-value">Anthropic</div></div>
+          <div class="profile-item"><div class="profile-label">Funding</div><div class="profile-value">$15B+ raised (Series E, $61.5B valuation)</div></div>
+          <div class="profile-item"><div class="profile-label">Launch</div><div class="profile-value">January 2026 (Mac), February 2026 (Windows)</div></div>
+          <div class="profile-item"><div class="profile-label">Target Market</div><div class="profile-value">Knowledge workers, PMs, analysts, non-developers</div></div>
+          <div class="profile-item"><div class="profile-label">Pricing</div><div class="profile-value">$20/mo (Pro) — $200/mo (Max 20x)</div></div>
+          <div class="profile-item"><div class="profile-label">Positioning</div><div class="profile-value">"Claude Code power for knowledge work"</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- What They Sell -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">📦</span><h3>What They Sell</h3></div>
+      <div class="card-body">
+        <p>Cowork is a feature inside the Claude Desktop app that gives Claude access to a folder on your computer. It can read, edit, create, and organize files. Users set a task, Claude plans and executes, optionally in parallel sub-agents. It produces professional deliverables (DOCX, XLSX, PPTX). Expandable via MCP connectors and a growing plugin marketplace. Available on Pro ($20/mo), Max ($100-200/mo), Team ($30/user/mo), and Enterprise plans.</p>
+      </div>
+    </div>
+
+    <!-- Recent Releases -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">🚀</span><h3>Recent Releases (Q1 2026)</h3></div>
+      <div class="card-body">
+        <div class="release"><div class="release-date">Jan 12</div><div class="release-text"><strong>Cowork launched</strong> — Mac-only research preview for Max subscribers</div></div>
+        <div class="release"><div class="release-date">Jan 16</div><div class="release-text"><strong>Pro plan access</strong> — Opened to all $20/mo subscribers</div></div>
+        <div class="release"><div class="release-date">Feb 10</div><div class="release-text"><strong>Windows launch</strong> — Full parity with macOS version</div></div>
+        <div class="release"><div class="release-date">Feb 24</div><div class="release-text"><strong>12 new MCP connectors</strong> — Google Calendar/Drive/Gmail, DocuSign, FactSet, and more</div></div>
+        <div class="release"><div class="release-date">Feb 24</div><div class="release-text"><strong>Private plugin marketplaces</strong> — Enterprise orgs can deploy custom plugins</div></div>
+        <div class="release"><div class="release-date">Mar 10</div><div class="release-text"><strong>Microsoft Copilot Cowork</strong> — Anthropic partnered with Microsoft for M365 integration</div></div>
+      </div>
+    </div>
+
+    <!-- Where We Win / They Win -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">⚔️</span><h3>Differentiation</h3></div>
+      <div class="card-body">
+        <div class="wl-grid">
+          <div class="wl-section where-we-win">
+            <h4>Where NYRA Wins</h4>
+            <div class="wl-item"><strong>Multi-model freedom</strong><p>Use Claude, GPT-5, Ollama, or any provider. Never locked into one vendor's model quality or pricing.</p></div>
+            <div class="wl-item"><strong>40+ built-in tools</strong><p>Git, Terminal, Task Board, Diff Viewer, A/B Testing, Agent Studio, Knowledge Graph — Cowork only does file operations.</p></div>
+            <div class="wl-item"><strong>Offline-first architecture</strong><p>Local SQLite, offline queue, works with local Ollama. Cowork requires constant internet.</p></div>
+            <div class="wl-item"><strong>Cross-session memory</strong><p>5-tier memory system persists across sessions. Cowork has zero memory between sessions.</p></div>
+            <div class="wl-item"><strong>Developer tools</strong><p>Codebase Explorer, Build Validator, Performance Profiler — Cowork is explicitly "without the code."</p></div>
+            <div class="wl-item"><strong>Free self-hosted option</strong><p>BYO API keys, no subscription. Cowork minimum is $20/mo.</p></div>
+          </div>
+          <div class="wl-section where-they-win">
+            <h4>Where Cowork Wins</h4>
+            <div class="wl-item"><strong>Brand trust & enterprise adoption</strong><p>Anthropic's name, SOC 2 compliance, enterprise SSO. NYRA is indie/newer.</p></div>
+            <div class="wl-item"><strong>Polished non-technical UX</strong><p>Purpose-built for PMs, analysts, marketers. Lower learning curve for non-devs.</p></div>
+            <div class="wl-item"><strong>Microsoft partnership</strong><p>Copilot Cowork integrates into M365. Enterprise orgs already in that ecosystem.</p></div>
+            <div class="wl-item"><strong>Managed connectors</strong><p>12+ turnkey MCP connectors (Google, DocuSign, FactSet). NYRA requires manual MCP setup.</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Talk Tracks -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">💬</span><h3>Talk Tracks</h3></div>
+      <div class="card-body">
+        <div class="talk-track">
+          <div class="scenario">When they mention Cowork early</div>
+          <p>"Cowork is a great tool for simple file tasks. But have you looked at how it handles multi-model comparison? With NYRA you can run the same prompt through Claude and GPT side by side — and switch providers without changing anything. Plus you get 40 built-in development tools that Cowork doesn't have."</p>
+        </div>
+        <div class="talk-track">
+          <div class="scenario">When displacing an existing Cowork user</div>
+          <p>"I hear you — Cowork's onboarding is smooth. But let me ask: do you ever need to work offline? Do you want your data on Anthropic's servers? NYRA runs entirely on your machine with local SQLite. And unlike Cowork, it remembers context across sessions — no more re-explaining your project every time."</p>
+        </div>
+        <div class="talk-track">
+          <div class="scenario">When they worry about vendor lock-in</div>
+          <p>"That's exactly the risk. Cowork only runs Claude models. If Anthropic raises prices or a better model comes out, you're stuck. NYRA supports Claude, GPT, Ollama, and custom providers — you always use the best model for each task."</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Landmine Questions -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">💣</span><h3>Landmine Questions</h3></div>
+      <div class="card-body">
+        <div class="landmine"><span class="q-icon">?</span><p>"Can Cowork remember what we discussed last week, or do I need to re-explain my project every session?"</p></div>
+        <div class="landmine"><span class="q-icon">?</span><p>"What happens to my Cowork workflows if Anthropic has an outage? Can I still work?"</p></div>
+        <div class="landmine"><span class="q-icon">?</span><p>"Can I use GPT-5 for coding tasks and Claude for writing in the same tool, or do I need separate subscriptions?"</p></div>
+        <div class="landmine"><span class="q-icon">?</span><p>"Does Cowork have a Git panel, terminal, or task board built in, or do I need separate tools for those?"</p></div>
+        <div class="landmine"><span class="q-icon">?</span><p>"Is Cowork activity captured in compliance audit logs? What about regulated workloads?"</p></div>
+      </div>
+    </div>
+
+    <!-- Pricing -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">💰</span><h3>Pricing Intelligence</h3></div>
+      <div class="card-body">
+        <table class="pricing-table">
+          <tr><td>Entry tier</td><td>$20/mo (Pro) — rate-limited, same features</td></tr>
+          <tr><td>Power tier</td><td>$100/mo (Max 5x) — 225+ msgs / 5hr window</td></tr>
+          <tr><td>Heavy tier</td><td>$200/mo (Max 20x) — 900+ msgs / 5hr window</td></tr>
+          <tr><td>Team</td><td>$30/user/mo — admin controls</td></tr>
+          <tr><td>Enterprise</td><td>Custom pricing — SSO, private plugins</td></tr>
+          <tr><td>Hidden costs</td><td>Rate limits force upgrade; no BYO-key option</td></tr>
+          <tr><td>NYRA advantage</td><td style="color:var(--sage)">Free self-hosted, BYO API keys, no rate limits imposed by platform</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- OPENAI CODEX TAB -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section id="codex" class="tab-content">
+  <div class="battlecard">
+
+    <!-- Profile -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">🟢</span><h3>OpenAI Codex — Company Profile</h3></div>
+      <div class="card-body">
+        <div class="profile-grid">
+          <div class="profile-item"><div class="profile-label">Company</div><div class="profile-value">OpenAI</div></div>
+          <div class="profile-item"><div class="profile-label">Funding</div><div class="profile-value">$40B round (Oct 2024), $300B+ valuation</div></div>
+          <div class="profile-item"><div class="profile-label">Launch</div><div class="profile-value">May 2025 (web), CLI + Mac app Feb 2026</div></div>
+          <div class="profile-item"><div class="profile-label">Target Market</div><div class="profile-value">Software developers, engineering teams</div></div>
+          <div class="profile-item"><div class="profile-label">Pricing</div><div class="profile-value">$20/mo (Plus) — $200/mo (Pro)</div></div>
+          <div class="profile-item"><div class="profile-label">Positioning</div><div class="profile-value">"Cloud-native AI coding agent"</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- What They Sell -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">📦</span><h3>What They Sell</h3></div>
+      <div class="card-body">
+        <p>Codex is OpenAI's multi-surface coding agent: a cloud-based web agent at chatgpt.com/codex, an open-source Rust CLI, IDE extensions for VS Code/Cursor, and a macOS desktop app. It reads, edits, and runs code in sandboxed environments. Features include image attachment, experimental multi-agent, web search, cloud task delegation, MCP support, and GitHub/Slack/Linear integrations. Built on GPT-5 / codex-mini, optimized for token efficiency.</p>
+      </div>
+    </div>
+
+    <!-- Recent Releases -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">🚀</span><h3>Recent Releases (Q1 2026)</h3></div>
+      <div class="card-body">
+        <div class="release"><div class="release-date">Jan 2026</div><div class="release-text"><strong>Codex CLI open-sourced</strong> — Rebuilt in Rust for performance</div></div>
+        <div class="release"><div class="release-date">Feb 2026</div><div class="release-text"><strong>macOS desktop app</strong> — Native app with cloud task integration</div></div>
+        <div class="release"><div class="release-date">Feb 2026</div><div class="release-text"><strong>VS Code marketplace lead</strong> — Claude Code edges Codex in installs</div></div>
+        <div class="release"><div class="release-date">Feb 2026</div><div class="release-text"><strong>Multi-agent collaboration</strong> — Experimental parallel task delegation</div></div>
+        <div class="release"><div class="release-date">Mar 2026</div><div class="release-text"><strong>Codex upgrades</strong> — Image input, web search, MCP support, scripting via exec</div></div>
+      </div>
+    </div>
+
+    <!-- Where We Win / They Win -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">⚔️</span><h3>Differentiation</h3></div>
+      <div class="card-body">
+        <div class="wl-grid">
+          <div class="wl-section where-we-win">
+            <h4>Where NYRA Wins</h4>
+            <div class="wl-item"><strong>Full desktop OS, not just code</strong><p>NYRA handles documents, presentations, data analysis, project management — Codex is code-only.</p></div>
+            <div class="wl-item"><strong>Rich visual GUI</strong><p>40+ panel UIs for Git, Tasks, Agent Analytics. Codex is terminal-first with limited visual tooling.</p></div>
+            <div class="wl-item"><strong>Multi-provider models</strong><p>Use Claude for writing, GPT for code, Ollama for privacy — all in one app.</p></div>
+            <div class="wl-item"><strong>Knowledge work features</strong><p>Cowork mode, Knowledge Graph, Memory Inspector, Report Generator — Codex has nothing for non-code work.</p></div>
+            <div class="wl-item"><strong>Offline-first</strong><p>Local SQLite + offline queue. Codex CLI needs API access; cloud tasks need internet.</p></div>
+          </div>
+          <div class="wl-section where-they-win">
+            <h4>Where Codex Wins</h4>
+            <div class="wl-item"><strong>Cloud async tasks</strong><p>Fire-and-forget cloud coding tasks. NYRA requires the app to be open.</p></div>
+            <div class="wl-item"><strong>Code benchmarks</strong><p>GPT-5.3 leads Terminal-Bench 2.0 at 77.3%. Purpose-built for software engineering.</p></div>
+            <div class="wl-item"><strong>IDE integration depth</strong><p>Native VS Code and Cursor extensions. NYRA is a standalone app.</p></div>
+            <div class="wl-item"><strong>Token efficiency</strong><p>GPT-5 costs ~half of Sonnet per token. Codex stretches budgets further.</p></div>
+            <div class="wl-item"><strong>Open-source CLI</strong><p>Codex CLI is open-source Rust. Community contributions and transparency.</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Talk Tracks -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">💬</span><h3>Talk Tracks</h3></div>
+      <div class="card-body">
+        <div class="talk-track">
+          <div class="scenario">When a developer says "I already use Codex"</div>
+          <p>"Codex is excellent for pure coding. But how do you handle the non-code parts of your day — project tracking, documentation, data analysis, team reports? NYRA gives you a Git panel, Task Board, Report Generator, and 35+ other tools alongside the same coding capabilities. It's one app instead of five."</p>
+        </div>
+        <div class="talk-track">
+          <div class="scenario">When they value cloud async tasks</div>
+          <p>"Cloud tasks are convenient, but think about what you're sending there — your entire codebase runs on OpenAI's servers. NYRA processes everything locally. And with our scheduled tasks feature, you can automate recurring work without cloud dependency."</p>
+        </div>
+        <div class="talk-track">
+          <div class="scenario">When they cite benchmark numbers</div>
+          <p>"Benchmarks matter, but NYRA lets you use the best model for each task. Use GPT-5 for code where it leads, and Claude Opus for writing where it leads — in the same session. Codex locks you into one provider regardless of task type."</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Landmine Questions -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">💣</span><h3>Landmine Questions</h3></div>
+      <div class="card-body">
+        <div class="landmine"><span class="q-icon">?</span><p>"Can Codex create a PowerPoint presentation or analyze a spreadsheet, or is it code-only?"</p></div>
+        <div class="landmine"><span class="q-icon">?</span><p>"If I want to use Claude's Opus model for a writing task, can I do that inside Codex?"</p></div>
+        <div class="landmine"><span class="q-icon">?</span><p>"Where does my code actually run when I fire a cloud task? What's OpenAI's data retention policy for that?"</p></div>
+        <div class="landmine"><span class="q-icon">?</span><p>"Does Codex have a visual task board or project management view, or is everything terminal-based?"</p></div>
+        <div class="landmine"><span class="q-icon">?</span><p>"Can Codex work offline if my internet drops during a critical coding session?"</p></div>
+      </div>
+    </div>
+
+    <!-- Pricing -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">💰</span><h3>Pricing Intelligence</h3></div>
+      <div class="card-body">
+        <table class="pricing-table">
+          <tr><td>Entry tier</td><td>$8/mo (Go) — very limited</td></tr>
+          <tr><td>Standard tier</td><td>$20/mo (Plus) — CLI + web agent with limits</td></tr>
+          <tr><td>Power tier</td><td>$200/mo (Pro) — 6x usage boost</td></tr>
+          <tr><td>API pricing</td><td>$1.50/1M input, $6/1M output (codex-mini)</td></tr>
+          <tr><td>Hidden costs</td><td>Cloud tasks consume credits fast; Pro needed for daily use</td></tr>
+          <tr><td>NYRA advantage</td><td style="color:var(--sage)">Free self-hosted, BYO keys from any provider, no platform markup</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- PERPLEXITY COMPUTER TAB -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section id="perplexity" class="tab-content">
+  <div class="battlecard">
+
+    <!-- Profile -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">🔵</span><h3>Perplexity Computer — Company Profile</h3></div>
+      <div class="card-body">
+        <div class="profile-grid">
+          <div class="profile-item"><div class="profile-label">Company</div><div class="profile-value">Perplexity AI</div></div>
+          <div class="profile-item"><div class="profile-label">Funding</div><div class="profile-value">$500M+ raised, $9B+ valuation</div></div>
+          <div class="profile-item"><div class="profile-label">Launch</div><div class="profile-value">March 2026 (waitlist)</div></div>
+          <div class="profile-item"><div class="profile-label">Target Market</div><div class="profile-value">Power users, executives, enterprise analysts</div></div>
+          <div class="profile-item"><div class="profile-label">Pricing</div><div class="profile-value">$200/mo (Max tier only)</div></div>
+          <div class="profile-item"><div class="profile-label">Positioning</div><div class="profile-value">"A general-purpose digital worker that runs 24/7"</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- What They Sell -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">📦</span><h3>What They Sell</h3></div>
+      <div class="card-body">
+        <p>Perplexity Computer is a cloud-based AI agent that "reasons, delegates, searches, builds, remembers, codes, and delivers." Personal Computer is a companion app that runs on a Mac mini 24/7, giving the cloud agent persistent access to local files, apps, and sessions. It can execute proactive tasks, monitor triggers, and carry work forward without user presence. Enterprise version connects to Snowflake, Salesforce, HubSpot via app connectors. Developer APIs: Search, Agent, Embeddings, Sandbox.</p>
+      </div>
+    </div>
+
+    <!-- Recent Releases -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">🚀</span><h3>Recent Releases (Q1 2026)</h3></div>
+      <div class="card-body">
+        <div class="release"><div class="release-date">Mar 11</div><div class="release-text"><strong>Personal Computer launched</strong> — Mac mini always-on AI agent (waitlist)</div></div>
+        <div class="release"><div class="release-date">Mar 11</div><div class="release-text"><strong>Computer for Enterprise</strong> — Snowflake, Salesforce, HubSpot connectors</div></div>
+        <div class="release"><div class="release-date">Mar 11</div><div class="release-text"><strong>Developer APIs</strong> — Search, Agent, Embeddings, Sandbox APIs released</div></div>
+        <div class="release"><div class="release-date">Mar 13</div><div class="release-text"><strong>Kill switch & audit trail</strong> — Security features for enterprise use</div></div>
+      </div>
+    </div>
+
+    <!-- Where We Win / They Win -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">⚔️</span><h3>Differentiation</h3></div>
+      <div class="card-body">
+        <div class="wl-grid">
+          <div class="wl-section where-we-win">
+            <h4>Where NYRA Wins</h4>
+            <div class="wl-item"><strong>No hardware requirement</strong><p>Perplexity needs a dedicated Mac mini running 24/7. NYRA runs on any computer you already own.</p></div>
+            <div class="wl-item"><strong>Cost: Free vs $200/mo</strong><p>NYRA is self-hosted with BYO API keys. Perplexity's only option is the $200/mo Max tier.</p></div>
+            <div class="wl-item"><strong>Cross-platform</strong><p>Mac, Windows, Linux. Perplexity is Mac-only.</p></div>
+            <div class="wl-item"><strong>Data sovereignty</strong><p>Everything stays local. Perplexity processes in the cloud with "limited transparency" around data handling.</p></div>
+            <div class="wl-item"><strong>Developer tools</strong><p>Full Git, Terminal, Codebase Explorer, Build Validator. Perplexity has no developer tooling.</p></div>
+            <div class="wl-item"><strong>Multi-model</strong><p>Use any provider. Perplexity locks you to their models.</p></div>
+          </div>
+          <div class="wl-section where-they-win">
+            <h4>Where Perplexity Wins</h4>
+            <div class="wl-item"><strong>Best-in-class search</strong><p>Perplexity's core product is search. Web research quality is unmatched.</p></div>
+            <div class="wl-item"><strong>24/7 proactive agent</strong><p>Runs on Mac mini always-on. Can monitor triggers and act without user present.</p></div>
+            <div class="wl-item"><strong>Enterprise connectors</strong><p>Native Snowflake, Salesforce, HubSpot integration out of the box.</p></div>
+            <div class="wl-item"><strong>Long-running workflows</strong><p>Can run tasks for hours or months. NYRA requires the app to be open.</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Talk Tracks -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">💬</span><h3>Talk Tracks</h3></div>
+      <div class="card-body">
+        <div class="talk-track">
+          <div class="scenario">When they're excited about "always-on AI"</div>
+          <p>"The always-on concept is compelling, but let's be practical: it requires a dedicated Mac mini, a $200/mo subscription, and your files living on a machine connected to Perplexity's cloud 24/7. NYRA gives you the same scheduled task capabilities on any machine you own, with your data never leaving your computer."</p>
+        </div>
+        <div class="talk-track">
+          <div class="scenario">When they value Perplexity's search</div>
+          <p>"Perplexity's search is genuinely best-in-class — we'd acknowledge that. But NYRA integrates web search through MCP and browser tools too. And everything else Perplexity lacks — Git, terminal, code tools, multi-model support, visual task management — NYRA has built in."</p>
+        </div>
+        <div class="talk-track">
+          <div class="scenario">When price sensitivity comes up</div>
+          <p>"Perplexity Computer is $200/month minimum — that's $2,400/year — plus you need a Mac mini. NYRA is free, runs on any computer, and you only pay for the API tokens you actually use. For most users that's under $20/month."</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Landmine Questions -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">💣</span><h3>Landmine Questions</h3></div>
+      <div class="card-body">
+        <div class="landmine"><span class="q-icon">?</span><p>"Do I need to buy a Mac mini to use this, or does it work on the computer I already have?"</p></div>
+        <div class="landmine"><span class="q-icon">?</span><p>"How exactly do credits work? Perplexity gives 10,000/month but won't clarify what consumes them."</p></div>
+        <div class="landmine"><span class="q-icon">?</span><p>"Can I use a different AI model — like Claude or GPT — for specific tasks within Perplexity Computer?"</p></div>
+        <div class="landmine"><span class="q-icon">?</span><p>"What happens to my local files when they're sent to Perplexity's cloud for processing?"</p></div>
+        <div class="landmine"><span class="q-icon">?</span><p>"Is there a Windows or Linux version, or is this Mac-exclusive?"</p></div>
+      </div>
+    </div>
+
+    <!-- Pricing -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">💰</span><h3>Pricing Intelligence</h3></div>
+      <div class="card-body">
+        <table class="pricing-table">
+          <tr><td>Only option</td><td>$200/mo (Max subscription) — waitlist access</td></tr>
+          <tr><td>Credits</td><td>10,000/month for computational tasks</td></tr>
+          <tr><td>Hardware</td><td>Requires Mac mini (not included) for Personal Computer</td></tr>
+          <tr><td>Enterprise</td><td>Custom pricing — SSO, Snowflake/Salesforce connectors</td></tr>
+          <tr><td>Hidden costs</td><td>Mac mini hardware (~$599), electricity, unclear credit consumption</td></tr>
+          <tr><td>NYRA advantage</td><td style="color:var(--sage)">Free, no hardware required, runs on any existing machine, transparent API costs</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- NYRA STRENGTHS TAB -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section id="nyra" class="tab-content">
+  <div class="battlecard">
+
+    <div class="card" style="border-color: rgba(212,120,92,0.2);">
+      <div class="card-header" style="background: var(--terra-dim);"><span class="card-icon">⚡</span><h3 style="color:var(--terra)">NYRA Desktop — Key Differentiators</h3></div>
+      <div class="card-body">
+        <p style="color:var(--text-primary);font-size:14px;font-weight:500;margin-bottom:16px;">NYRA Desktop is a self-hosted, multi-provider AI operating system for power users and developers who want full control over their AI workflow.</p>
+
+        <div class="wl-item"><strong style="color:var(--terra)">1. Multi-Provider Freedom</strong><p>The only desktop AI tool that lets you use Claude, GPT, Ollama, and custom providers in the same app. Switch models per-task. No vendor lock-in. A/B test models side by side with the built-in comparison tool.</p></div>
+
+        <div class="wl-item"><strong style="color:var(--terra)">2. 40+ Built-in Tool Panels</strong><p>Git integration, integrated terminal, Task Board (Kanban), API Playground, Diff Viewer, Build Validator, Agent Studio, Agent Analytics, Knowledge Graph, Performance Profiler, Report Generator, Webhook Manager, and 25+ more — all native, no plugins needed.</p></div>
+
+        <div class="wl-item"><strong style="color:var(--terra)">3. Offline-First Architecture</strong><p>Everything runs locally on Electron + SQLite. Offline queue syncs when connectivity returns. Use Ollama for fully air-gapped operation. No cloud dependency, no data leaves your machine.</p></div>
+
+        <div class="wl-item"><strong style="color:var(--terra)">4. 5-Tier Memory System</strong><p>Working → Episodic → Semantic → Procedural → Archival memory persists across sessions. Knowledge Graph visualizes relationships. Unlike every competitor, NYRA actually remembers your project context.</p></div>
+
+        <div class="wl-item"><strong style="color:var(--terra)">5. Full Cowork + Agent Orchestration</strong><p>Cowork mode with progress tracking, folder management, plan views, and agent sections. Agent Pipeline for multi-step orchestration. Agent Studio for building custom agents. Agent Analytics for performance tracking.</p></div>
+
+        <div class="wl-item"><strong style="color:var(--terra)">6. Cross-Platform + Free</strong><p>macOS, Windows, Linux. Self-hosted with BYO API keys — no subscription fee, no rate limits imposed by the platform, no waitlist. You control the cost.</p></div>
+
+        <div class="wl-item"><strong style="color:var(--terra)">7. Consistent Warm Theme System</strong><p>Cohesive 5-color design palette (terra, gold, sage, blush, warm) with 12 wallpaper textures, dark/dim/light modes, and custom theme editor. Professional, distinctive aesthetic that competitors' generic UIs can't match.</p></div>
+      </div>
+    </div>
+
+    <!-- Recent NYRA Releases -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">🚀</span><h3>Recent NYRA Releases</h3></div>
+      <div class="card-body">
+        <div class="release"><div class="release-date">Session 10</div><div class="release-text"><strong>40+ tool panels complete</strong> — Full suite from A/B Testing to Workspace Export</div></div>
+        <div class="release"><div class="release-date">Session 11</div><div class="release-text"><strong>145-test infrastructure</strong> — Complete backend test coverage with sql.js compatibility layer</div></div>
+        <div class="release"><div class="release-date">Session 12</div><div class="release-text"><strong>Theme consistency audit</strong> — Zero non-theme colors across 50+ components, unified design system</div></div>
+        <div class="release"><div class="release-date">Ongoing</div><div class="release-text"><strong>Cowork mode</strong> — Progress, Folders, Context, Plan, Agents, and Memory sections</div></div>
+        <div class="release"><div class="release-date">Ongoing</div><div class="release-text"><strong>Plugin ecosystem</strong> — Plugin Studio + Skills Marketplace + MCP browser</div></div>
+      </div>
+    </div>
+
+    <!-- Proof Points -->
+    <div class="card">
+      <div class="card-header"><span class="card-icon">📊</span><h3>Proof Points</h3></div>
+      <div class="card-body">
+        <div class="wl-item"><strong>Architecture depth</strong><p>1,500+ line App.tsx orchestrating 40+ panels, 6 collapsible sidebar groups, Cmd+K command palette, session management with branching, multi-project support.</p></div>
+        <div class="wl-item"><strong>Test coverage</strong><p>145 tests across 13 test files — backend modules for A/B testing, accessibility, backups, build validation, global search, offline management, reports, session sharing, webhooks, and more.</p></div>
+        <div class="wl-item"><strong>Design system maturity</strong><p>5-color theme palette enforced across every component, 3 theme modes (dark/dim/light), 12 tileable wallpaper textures, custom font stack, glass morphism effects.</p></div>
+        <div class="wl-item"><strong>Zero TypeScript errors</strong><p>Clean compilation across both tsconfig.web.json and tsconfig.node.json — production-ready codebase.</p></div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+</div>
+
+<script>
+// Tab switching
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    tab.classList.add('active');
+    tab.setAttribute('aria-selected', 'true');
+    document.getElementById(tab.dataset.tab).classList.add('active');
+  });
+});
+</script>
+</body>
+</html>

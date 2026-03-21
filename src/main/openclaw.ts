@@ -386,6 +386,21 @@ class OpenClawManager extends EventEmitter {
     })
   }
 
+  // ── Graceful restart (refreshes env vars with latest API keys) ────────────
+  async restart(): Promise<void> {
+    console.log('[OpenClaw] Restart requested — refreshing gateway with latest keys')
+    this.stopHealthCheck()
+    if (this.gatewayProcess) {
+      this.gatewayProcess.removeAllListeners('close')
+      IS_WIN ? this.gatewayProcess.kill() : this.gatewayProcess.kill('SIGTERM')
+      this.gatewayProcess = null
+    }
+    // Brief pause to let the port close
+    await new Promise(r => setTimeout(r, 1000))
+    this.restartAttempts = 0
+    await this.spawnGateway()
+  }
+
   // ── Teardown ─────────────────────────────────────────────────────────────────
   shutdown() {
     this.stopHealthCheck()
